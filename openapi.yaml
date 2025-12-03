@@ -1,0 +1,432 @@
+openapi: 3.0.3
+info:
+  title: NSIM Payment Network API
+  description: |
+    Payment network API for routing payment requests between merchants (SSIM) and card issuers (BSIM).
+
+    ## Authentication
+    All payment endpoints require a valid API key passed in the `X-API-Key` header.
+
+    ## Payment Flow
+    1. User completes OAuth consent at BSIM, selecting a card for payment
+    2. BSIM issues a `cardToken` to the merchant
+    3. Merchant calls NSIM `/authorize` with the card token
+    4. NSIM routes to BSIM, which creates an authorization hold
+    5. Merchant captures the payment when goods are shipped
+    6. Optional: void or refund as needed
+  version: 1.0.0
+  contact:
+    name: BSIM Team
+    url: https://github.com/jordancrombie/nsim
+
+servers:
+  - url: https://payment.banksim.ca/api/v1
+    description: Production
+  - url: http://localhost:3006/api/v1
+    description: Local development
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns service health status
+      tags:
+        - Health
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  service:
+                    type: string
+                    example: nsim
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /payments/authorize:
+    post:
+      summary: Authorize a payment
+      description: |
+        Request authorization for a payment. Creates a hold on the card's available credit.
+        Authorization expires after 7 days if not captured.
+      tags:
+        - Payments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizationRequest'
+      responses:
+        '200':
+          description: Authorization approved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizationResponse'
+        '400':
+          description: Authorization declined
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizationResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /payments/{transactionId}/capture:
+    post:
+      summary: Capture an authorized payment
+      description: |
+        Capture all or part of an authorized payment. The capture amount cannot exceed
+        the authorized amount. Partial capture will release the remaining authorization.
+      tags:
+        - Payments
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaptureRequest'
+      responses:
+        '200':
+          description: Capture successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureResponse'
+        '400':
+          description: Capture failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureResponse'
+
+  /payments/{transactionId}/void:
+    post:
+      summary: Void an authorization
+      description: |
+        Void a pending authorization. This releases the held credit back to the cardholder.
+        Cannot void a captured or already voided authorization.
+      tags:
+        - Payments
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoidRequest'
+      responses:
+        '200':
+          description: Void successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoidResponse'
+        '400':
+          description: Void failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoidResponse'
+
+  /payments/{transactionId}/refund:
+    post:
+      summary: Refund a captured payment
+      description: |
+        Refund all or part of a captured payment. Multiple partial refunds are supported
+        up to the captured amount.
+      tags:
+        - Payments
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundRequest'
+      responses:
+        '200':
+          description: Refund successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundResponse'
+        '400':
+          description: Refund failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundResponse'
+
+  /payments/{transactionId}:
+    get:
+      summary: Get transaction status
+      description: Retrieve the current status and details of a transaction
+      tags:
+        - Payments
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Transaction found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '404':
+          description: Transaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    AuthorizationRequest:
+      type: object
+      required:
+        - merchantId
+        - amount
+        - cardToken
+        - orderId
+      properties:
+        merchantId:
+          type: string
+          description: Unique identifier for the merchant
+          example: merchant_abc123
+        merchantName:
+          type: string
+          description: Display name of the merchant
+          example: SSIM Store
+        amount:
+          type: number
+          format: decimal
+          minimum: 0.01
+          description: Amount to authorize in the transaction currency
+          example: 99.99
+        currency:
+          type: string
+          default: CAD
+          description: ISO 4217 currency code
+          example: CAD
+        cardToken:
+          type: string
+          description: Token representing the consented card (from OAuth flow)
+          example: tok_xyz789
+        orderId:
+          type: string
+          description: Merchant's order identifier
+          example: order_12345
+        description:
+          type: string
+          description: Optional description of the purchase
+          example: Widget purchase
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional key-value metadata
+
+    AuthorizationResponse:
+      type: object
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+          description: NSIM transaction identifier
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        authorizationCode:
+          type: string
+          description: Authorization code from issuer (if approved)
+          example: AUTH-ABC12345
+        declineReason:
+          type: string
+          description: Reason for decline (if declined)
+          example: Insufficient credit
+        timestamp:
+          type: string
+          format: date-time
+
+    CaptureRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+          format: decimal
+          description: Amount to capture (defaults to full authorization)
+          example: 99.99
+
+    CaptureResponse:
+      type: object
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        capturedAmount:
+          type: number
+          format: decimal
+        timestamp:
+          type: string
+          format: date-time
+
+    VoidRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          description: Optional reason for voiding
+          example: Customer cancelled order
+
+    VoidResponse:
+      type: object
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        timestamp:
+          type: string
+          format: date-time
+
+    RefundRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+          format: decimal
+          description: Amount to refund (defaults to remaining balance)
+          example: 50.00
+        reason:
+          type: string
+          description: Optional reason for refund
+          example: Product returned
+
+    RefundResponse:
+      type: object
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        refundId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        refundedAmount:
+          type: number
+          format: decimal
+        timestamp:
+          type: string
+          format: date-time
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        merchantId:
+          type: string
+        merchantName:
+          type: string
+        orderId:
+          type: string
+        amount:
+          type: number
+          format: decimal
+        currency:
+          type: string
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        authorizationCode:
+          type: string
+        capturedAmount:
+          type: number
+          format: decimal
+        refundedAmount:
+          type: number
+          format: decimal
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+
+    PaymentStatus:
+      type: string
+      enum:
+        - pending
+        - authorized
+        - captured
+        - voided
+        - refunded
+        - declined
+        - expired
+        - failed
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error type
+        message:
+          type: string
+          description: Detailed error message
+
+tags:
+  - name: Health
+    description: Service health checks
+  - name: Payments
+    description: Payment processing operations
