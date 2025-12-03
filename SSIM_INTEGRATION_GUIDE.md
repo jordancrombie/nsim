@@ -2,6 +2,26 @@
 
 This guide explains how to integrate SSIM (Store Simulator) with the NSIM Payment Network to accept card payments from BSIM customers.
 
+## Quick Start - Dev Environment
+
+**Your SSIM OAuth credentials are already configured:**
+
+| Setting | Value |
+|---------|-------|
+| Client ID | `ssim-client` |
+| Client Secret | `ece9c837b17bface1df34fe89d8c8e13bcf4f9e77c7a7681442952ebd9dd7015` |
+| Auth URL | `https://auth-dev.banksim.ca` |
+| Payment API URL | `https://payment-dev.banksim.ca` |
+| Redirect URIs | `https://ssim-dev.banksim.ca/auth/callback/bsim`, `http://localhost:3005/auth/callback/bsim` |
+
+**Dev vs Production URLs:**
+
+| Service | Dev URL | Production URL |
+|---------|---------|----------------|
+| Auth Server | `https://auth-dev.banksim.ca` | `https://auth.banksim.ca` |
+| Payment Network | `https://payment-dev.banksim.ca` | `https://payment.banksim.ca` |
+| SSIM | `https://ssim-dev.banksim.ca` | `https://ssim.banksim.ca` |
+
 ## Overview
 
 The payment flow involves three systems:
@@ -30,16 +50,16 @@ When a customer wants to pay, redirect them to BSIM's authorization endpoint to 
 ### Authorization Request
 
 ```
-GET https://auth.banksim.ca/auth
-  ?client_id=YOUR_CLIENT_ID
-  &redirect_uri=https://ssim.banksim.ca/payment/callback
+GET https://auth-dev.banksim.ca/auth
+  ?client_id=ssim-client
+  &redirect_uri=https://ssim-dev.banksim.ca/auth/callback/bsim
   &response_type=code
   &scope=openid payment:authorize
   &state=order_12345
 ```
 
 **Parameters:**
-- `client_id` - Your registered client ID
+- `client_id` - Your registered client ID (`ssim-client` for dev)
 - `redirect_uri` - Where to redirect after authorization
 - `response_type` - Must be `code`
 - `scope` - Must include `payment:authorize`
@@ -56,7 +76,7 @@ GET https://auth.banksim.ca/auth
 ### Authorization Callback
 
 ```
-GET https://ssim.banksim.ca/payment/callback
+GET https://ssim-dev.banksim.ca/auth/callback/bsim
   ?code=AUTHORIZATION_CODE
   &state=order_12345
 ```
@@ -66,14 +86,14 @@ GET https://ssim.banksim.ca/payment/callback
 Exchange the authorization code for an access token:
 
 ```http
-POST https://auth.banksim.ca/token
+POST https://auth-dev.banksim.ca/token
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=authorization_code
 &code=AUTHORIZATION_CODE
-&redirect_uri=https://ssim.banksim.ca/payment/callback
-&client_id=YOUR_CLIENT_ID
-&client_secret=YOUR_CLIENT_SECRET
+&redirect_uri=https://ssim-dev.banksim.ca/auth/callback/bsim
+&client_id=ssim-client
+&client_secret=ece9c837b17bface1df34fe89d8c8e13bcf4f9e77c7a7681442952ebd9dd7015
 ```
 
 **Response:**
@@ -103,12 +123,12 @@ Use the card token to authorize a payment through the NSIM Payment Network.
 ### Authorization Request
 
 ```http
-POST https://payment.banksim.ca/api/v1/payments/authorize
+POST https://payment-dev.banksim.ca/api/v1/payments/authorize
 Content-Type: application/json
-X-API-Key: YOUR_MERCHANT_API_KEY
+X-API-Key: dev-payment-api-key
 
 {
-  "merchantId": "YOUR_CLIENT_ID",
+  "merchantId": "ssim-client",
   "merchantName": "SSIM Store",
   "amount": 99.99,
   "currency": "CAD",
@@ -143,9 +163,9 @@ X-API-Key: YOUR_MERCHANT_API_KEY
 After shipping the order or completing the service, capture the authorized payment:
 
 ```http
-POST https://payment.banksim.ca/api/v1/payments/{transactionId}/capture
+POST https://payment-dev.banksim.ca/api/v1/payments/{transactionId}/capture
 Content-Type: application/json
-X-API-Key: YOUR_MERCHANT_API_KEY
+X-API-Key: dev-payment-api-key
 
 {
   "amount": 99.99
@@ -169,9 +189,9 @@ X-API-Key: YOUR_MERCHANT_API_KEY
 To refund a captured payment:
 
 ```http
-POST https://payment.banksim.ca/api/v1/payments/{transactionId}/refund
+POST https://payment-dev.banksim.ca/api/v1/payments/{transactionId}/refund
 Content-Type: application/json
-X-API-Key: YOUR_MERCHANT_API_KEY
+X-API-Key: dev-payment-api-key
 
 {
   "amount": 99.99,
@@ -195,9 +215,9 @@ X-API-Key: YOUR_MERCHANT_API_KEY
 To cancel an authorization before capture (e.g., order cancelled):
 
 ```http
-POST https://payment.banksim.ca/api/v1/payments/{transactionId}/void
+POST https://payment-dev.banksim.ca/api/v1/payments/{transactionId}/void
 Content-Type: application/json
-X-API-Key: YOUR_MERCHANT_API_KEY
+X-API-Key: dev-payment-api-key
 
 {
   "reason": "Customer cancelled order"
@@ -207,8 +227,8 @@ X-API-Key: YOUR_MERCHANT_API_KEY
 ## Check Transaction Status
 
 ```http
-GET https://payment.banksim.ca/api/v1/payments/{transactionId}
-X-API-Key: YOUR_MERCHANT_API_KEY
+GET https://payment-dev.banksim.ca/api/v1/payments/{transactionId}
+X-API-Key: dev-payment-api-key
 ```
 
 **Response:**
@@ -302,7 +322,7 @@ export interface IPaymentNetworkAdapter {
 // ssim/src/payment/SimNetAdapter.ts
 
 export class SimNetAdapter implements IPaymentNetworkAdapter {
-  private baseUrl = 'https://payment.banksim.ca/api/v1';
+  private baseUrl = 'https://payment-dev.banksim.ca/api/v1';  // Use payment.banksim.ca for production
   private apiKey: string;
   private merchantId: string;
 
@@ -351,15 +371,15 @@ export class SimNetAdapter implements IPaymentNetworkAdapter {
 Add these to your SSIM `.env`:
 
 ```env
-# OAuth (BSIM Auth Server)
-OAUTH_CLIENT_ID=ssim-store
-OAUTH_CLIENT_SECRET=your-client-secret
-OAUTH_AUTH_URL=https://auth.banksim.ca
-OAUTH_TOKEN_URL=https://auth.banksim.ca/token
+# OAuth (BSIM Auth Server) - DEV
+OAUTH_CLIENT_ID=ssim-client
+OAUTH_CLIENT_SECRET=ece9c837b17bface1df34fe89d8c8e13bcf4f9e77c7a7681442952ebd9dd7015
+OAUTH_AUTH_URL=https://auth-dev.banksim.ca
+OAUTH_TOKEN_URL=https://auth-dev.banksim.ca/token
 
-# Payment Network (NSIM)
-PAYMENT_NETWORK_URL=https://payment.banksim.ca
-PAYMENT_API_KEY=your-merchant-api-key
+# Payment Network (NSIM) - DEV
+PAYMENT_NETWORK_URL=https://payment-dev.banksim.ca
+PAYMENT_API_KEY=dev-payment-api-key
 ```
 
 ## Testing
