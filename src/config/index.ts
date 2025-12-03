@@ -8,8 +8,8 @@ export const config = {
 
   // BSIM connection
   bsim: {
-    baseUrl: process.env.BSIM_BASE_URL || 'http://localhost:3002',
-    apiKey: process.env.BSIM_API_KEY || '',
+    baseUrl: process.env.BSIM_BASE_URL || 'http://localhost:3001',
+    apiKey: process.env.BSIM_API_KEY || 'dev-payment-api-key',
   },
 
   // Redis for queue (local dev)

@@ -2,21 +2,24 @@ import { config } from '../config/index.js';
 
 /**
  * Client for communicating with BSIM payment handler
- * This is a stub implementation - will be replaced with actual HTTP calls
+ * Makes HTTP calls to BSIM's /api/payment-network endpoints
  */
 
 export interface BsimAuthorizationRequest {
   cardToken: string;
   amount: number;
+  currency?: string;
   merchantId: string;
   merchantName: string;
   orderId: string;
+  description?: string;
 }
 
 export interface BsimAuthorizationResponse {
   approved: boolean;
   authorizationCode?: string;
   declineReason?: string;
+  availableCredit?: number;
 }
 
 export interface BsimCaptureRequest {
@@ -57,48 +60,167 @@ export class BsimClient {
     this.apiKey = config.bsim.apiKey;
   }
 
+  private async makeRequest<T>(endpoint: string, body: object): Promise<T> {
+    const url = `${this.baseUrl}/api/payment-network${endpoint}`;
+    console.log(`[BsimClient] POST ${url}`);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': this.apiKey,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[BsimClient] Error ${response.status}: ${errorText}`);
+      throw new Error(`BSIM request failed: ${response.status} ${errorText}`);
+    }
+
+    return response.json() as T;
+  }
+
   /**
-   * STUB: Authorize a payment with BSIM
-   * TODO: Implement actual HTTP call to BSIM payment handler
+   * Authorize a payment with BSIM
+   * Validates card token and creates a hold on available credit
    */
   async authorize(request: BsimAuthorizationRequest): Promise<BsimAuthorizationResponse> {
-    console.log('[STUB] BSIM authorize:', request);
+    console.log('[BsimClient] Authorize request:', {
+      ...request,
+      cardToken: request.cardToken.substring(0, 10) + '...',
+    });
 
-    // Stub: Always approve for testing
-    // In production, this will call BSIM's payment handler endpoint
-    return {
-      approved: true,
-      authorizationCode: `AUTH-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-    };
+    try {
+      const response = await this.makeRequest<{
+        status: 'approved' | 'declined' | 'error';
+        authorizationCode?: string;
+        declineReason?: string;
+        availableCredit?: number;
+      }>('/authorize', {
+        cardToken: request.cardToken,
+        amount: request.amount,
+        currency: request.currency || 'CAD',
+        merchantId: request.merchantId,
+        merchantName: request.merchantName,
+        orderId: request.orderId,
+        description: request.description,
+      });
+
+      console.log('[BsimClient] Authorize response:', response);
+
+      return {
+        approved: response.status === 'approved',
+        authorizationCode: response.authorizationCode,
+        declineReason: response.declineReason,
+        availableCredit: response.availableCredit,
+      };
+    } catch (error) {
+      console.error('[BsimClient] Authorize error:', error);
+      return {
+        approved: false,
+        declineReason: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
   }
 
   /**
-   * STUB: Capture an authorized payment
-   * TODO: Implement actual HTTP call to BSIM payment handler
+   * Capture an authorized payment
+   * Converts the hold to an actual charge
    */
   async capture(request: BsimCaptureRequest): Promise<BsimCaptureResponse> {
-    console.log('[STUB] BSIM capture:', request);
+    console.log('[BsimClient] Capture request:', request);
 
-    return { success: true };
+    try {
+      const response = await this.makeRequest<{ success: boolean; error?: string }>(
+        '/capture',
+        {
+          authorizationCode: request.authorizationCode,
+          amount: request.amount,
+        }
+      );
+
+      console.log('[BsimClient] Capture response:', response);
+      return response;
+    } catch (error) {
+      console.error('[BsimClient] Capture error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
   }
 
   /**
-   * STUB: Void an authorization
-   * TODO: Implement actual HTTP call to BSIM payment handler
+   * Void an authorization
+   * Releases the hold without charging
    */
   async void(request: BsimVoidRequest): Promise<BsimVoidResponse> {
-    console.log('[STUB] BSIM void:', request);
+    console.log('[BsimClient] Void request:', request);
 
-    return { success: true };
+    try {
+      const response = await this.makeRequest<{ success: boolean; error?: string }>(
+        '/void',
+        {
+          authorizationCode: request.authorizationCode,
+        }
+      );
+
+      console.log('[BsimClient] Void response:', response);
+      return response;
+    } catch (error) {
+      console.error('[BsimClient] Void error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
   }
 
   /**
-   * STUB: Refund a captured payment
-   * TODO: Implement actual HTTP call to BSIM payment handler
+   * Refund a captured payment
+   * Credits the amount back to the card
    */
   async refund(request: BsimRefundRequest): Promise<BsimRefundResponse> {
-    console.log('[STUB] BSIM refund:', request);
+    console.log('[BsimClient] Refund request:', request);
 
-    return { success: true };
+    try {
+      const response = await this.makeRequest<{ success: boolean; error?: string }>(
+        '/refund',
+        {
+          authorizationCode: request.authorizationCode,
+          amount: request.amount,
+        }
+      );
+
+      console.log('[BsimClient] Refund response:', response);
+      return response;
+    } catch (error) {
+      console.error('[BsimClient] Refund error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
+  /**
+   * Validate a card token
+   * Checks if the token is valid and belongs to an active card
+   */
+  async validateToken(cardToken: string): Promise<boolean> {
+    console.log('[BsimClient] Validate token:', cardToken.substring(0, 10) + '...');
+
+    try {
+      const response = await this.makeRequest<{ valid: boolean }>('/validate-token', {
+        cardToken,
+      });
+
+      return response.valid;
+    } catch (error) {
+      console.error('[BsimClient] Validate token error:', error);
+      return false;
+    }
   }
 }
