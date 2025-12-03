@@ -61,6 +61,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Integrated into BSIM's docker-compose.yml as `payment-network` service
   - Accessible via nginx at `payment.banksim.ca` and `payment-dev.banksim.ca`
 
+- **Jest Testing Framework** - Comprehensive unit test coverage
+  - 60 tests covering BsimClient, PaymentService, and payment routes
+  - MockBsimClient for simulating BSIM payment responses
+  - Tests for authorization, capture, void, and refund flows
+  - Full payment lifecycle integration tests
+  - ESM-compatible Jest configuration with ts-jest
+  - Test commands: `npm test`, `npm run test:watch`, `npm run test:coverage`
+
 ### Coming Soon
 - Redis queue for async payment processing
 - PostgreSQL for persistent transaction storage
