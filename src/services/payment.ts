@@ -13,6 +13,7 @@ import {
   PaymentStatus,
 } from '../types/payment.js';
 import { BsimClient } from './bsim-client.js';
+import { sendWebhookNotification } from './webhook.js';
 
 /**
  * In-memory transaction store (will be replaced with PostgreSQL)
@@ -75,6 +76,25 @@ export class PaymentService {
     transaction.updatedAt = new Date();
     transactions.set(transactionId, transaction);
 
+    // Send webhook notification
+    const webhookEvent =
+      transaction.status === 'authorized'
+        ? 'payment.authorized'
+        : transaction.status === 'declined'
+          ? 'payment.declined'
+          : 'payment.failed';
+
+    sendWebhookNotification(webhookEvent, {
+      transactionId,
+      merchantId: request.merchantId,
+      orderId: request.orderId,
+      amount: request.amount,
+      currency: transaction.currency,
+      status: transaction.status,
+      authorizationCode: transaction.authorizationCode,
+      declineReason: transaction.declineReason,
+    }).catch((err) => console.error('[PaymentService] Webhook notification error:', err));
+
     return {
       transactionId,
       status: transaction.status,
@@ -130,6 +150,19 @@ export class PaymentService {
     transaction.updatedAt = new Date();
     transactions.set(request.transactionId, transaction);
 
+    // Send webhook notification
+    if (transaction.status === 'captured') {
+      sendWebhookNotification('payment.captured', {
+        transactionId: request.transactionId,
+        merchantId: transaction.merchantId,
+        orderId: transaction.orderId,
+        amount: transaction.capturedAmount,
+        currency: transaction.currency,
+        status: transaction.status,
+        authorizationCode: transaction.authorizationCode,
+      }).catch((err) => console.error('[PaymentService] Webhook notification error:', err));
+    }
+
     return {
       transactionId: request.transactionId,
       status: transaction.status,
@@ -177,6 +210,18 @@ export class PaymentService {
 
     transaction.updatedAt = new Date();
     transactions.set(request.transactionId, transaction);
+
+    // Send webhook notification
+    if (transaction.status === 'voided') {
+      sendWebhookNotification('payment.voided', {
+        transactionId: request.transactionId,
+        merchantId: transaction.merchantId,
+        orderId: transaction.orderId,
+        amount: transaction.amount,
+        currency: transaction.currency,
+        status: transaction.status,
+      }).catch((err) => console.error('[PaymentService] Webhook notification error:', err));
+    }
 
     return {
       transactionId: request.transactionId,
@@ -246,6 +291,18 @@ export class PaymentService {
     transaction.updatedAt = new Date();
     transactions.set(request.transactionId, transaction);
 
+    // Send webhook notification for refund
+    sendWebhookNotification('payment.refunded', {
+      transactionId: request.transactionId,
+      merchantId: transaction.merchantId,
+      orderId: transaction.orderId,
+      amount: refundAmount,
+      currency: transaction.currency,
+      status: transaction.status,
+      refundId,
+      refundedAmount: transaction.refundedAmount,
+    }).catch((err) => console.error('[PaymentService] Webhook notification error:', err));
+
     return {
       transactionId: request.transactionId,
       refundId,
@@ -257,5 +314,62 @@ export class PaymentService {
 
   async getTransaction(transactionId: string): Promise<PaymentTransaction | null> {
     return transactions.get(transactionId) ?? null;
+  }
+
+  /**
+   * Get all expired authorizations that need to be voided
+   */
+  async getExpiredAuthorizations(): Promise<PaymentTransaction[]> {
+    const now = new Date();
+    const expired: PaymentTransaction[] = [];
+
+    for (const transaction of transactions.values()) {
+      if (
+        transaction.status === 'authorized' &&
+        transaction.expiresAt &&
+        transaction.expiresAt <= now
+      ) {
+        expired.push(transaction);
+      }
+    }
+
+    return expired;
+  }
+
+  /**
+   * Expire an authorization - void it and send webhook
+   */
+  async expireAuthorization(transactionId: string): Promise<void> {
+    const transaction = transactions.get(transactionId);
+
+    if (!transaction || transaction.status !== 'authorized') {
+      return;
+    }
+
+    // Try to void with BSIM (but don't fail if BSIM is down)
+    try {
+      if (transaction.authorizationCode) {
+        await this.bsimClient.void({
+          authorizationCode: transaction.authorizationCode,
+        });
+      }
+    } catch (error) {
+      console.warn(`[PaymentService] Failed to void expired auth with BSIM: ${error}`);
+    }
+
+    // Mark as expired locally
+    transaction.status = 'expired';
+    transaction.updatedAt = new Date();
+    transactions.set(transactionId, transaction);
+
+    // Send webhook notification
+    sendWebhookNotification('payment.expired', {
+      transactionId,
+      merchantId: transaction.merchantId,
+      orderId: transaction.orderId,
+      amount: transaction.amount,
+      currency: transaction.currency,
+      status: transaction.status,
+    }).catch((err) => console.error('[PaymentService] Webhook notification error:', err));
   }
 }

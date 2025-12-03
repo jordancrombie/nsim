@@ -5,6 +5,44 @@ import { config } from '../config/index.js';
  * Makes HTTP calls to BSIM's /api/payment-network endpoints
  */
 
+/**
+ * Delay execution for a specified number of milliseconds
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Check if an error is retryable (network errors, 5xx responses)
+ */
+function isRetryableError(error: unknown): boolean {
+  // Network errors
+  if (error instanceof TypeError && error.message.includes('fetch')) {
+    return true;
+  }
+
+  // Our custom error format for HTTP errors
+  if (error instanceof Error) {
+    const message = error.message;
+    // Retry on 5xx errors (server errors)
+    if (/BSIM request failed: 5\d{2}/.test(message)) {
+      return true;
+    }
+    // Retry on network-related errors
+    if (
+      message.includes('ECONNREFUSED') ||
+      message.includes('ETIMEDOUT') ||
+      message.includes('ENOTFOUND') ||
+      message.includes('socket hang up') ||
+      message.includes('network')
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export interface BsimAuthorizationRequest {
   cardToken: string;
   amount: number;
@@ -62,24 +100,62 @@ export class BsimClient {
 
   private async makeRequest<T>(endpoint: string, body: object): Promise<T> {
     const url = `${this.baseUrl}/api/payment-network${endpoint}`;
-    console.log(`[BsimClient] POST ${url}`);
+    const maxRetries = config.bsimRetry.maxRetries;
+    const baseDelay = config.bsimRetry.retryDelayMs;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': this.apiKey,
-      },
-      body: JSON.stringify(body),
-    });
+    let lastError: Error | null = null;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[BsimClient] Error ${response.status}: ${errorText}`);
-      throw new Error(`BSIM request failed: ${response.status} ${errorText}`);
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          // Exponential backoff: 500ms, 1000ms, 2000ms, etc.
+          const retryDelay = baseDelay * Math.pow(2, attempt - 1);
+          console.log(`[BsimClient] Retry attempt ${attempt}/${maxRetries} after ${retryDelay}ms`);
+          await delay(retryDelay);
+        }
+
+        console.log(`[BsimClient] POST ${url} (attempt ${attempt + 1}/${maxRetries + 1})`);
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': this.apiKey,
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const error = new Error(`BSIM request failed: ${response.status} ${errorText}`);
+          console.error(`[BsimClient] Error ${response.status}: ${errorText}`);
+
+          // Check if we should retry
+          if (response.status >= 500 && attempt < maxRetries) {
+            lastError = error;
+            continue; // Retry on 5xx errors
+          }
+
+          throw error;
+        }
+
+        return response.json() as T;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        // Check if error is retryable and we have retries left
+        if (isRetryableError(error) && attempt < maxRetries) {
+          console.warn(`[BsimClient] Retryable error on attempt ${attempt + 1}: ${lastError.message}`);
+          continue;
+        }
+
+        // Non-retryable error or max retries reached
+        throw lastError;
+      }
     }
 
-    return response.json() as T;
+    // Should not reach here, but just in case
+    throw lastError || new Error('Unknown error in makeRequest');
   }
 
   /**

@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import { config } from './config/index.js';
 import paymentRoutes from './routes/payment.js';
 import healthRoutes from './routes/health.js';
+import webhookRoutes from './routes/webhook.js';
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use(express.json());
 // Routes
 app.use('/health', healthRoutes);
 app.use('/api/v1/payments', paymentRoutes);
+app.use('/api/v1/webhooks', webhookRoutes);
 
 // Error handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

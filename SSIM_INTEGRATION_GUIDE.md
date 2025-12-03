@@ -417,12 +417,153 @@ switch (response.status) {
 }
 ```
 
+## Webhooks (NEW)
+
+Register webhooks to receive real-time notifications about payment events. This eliminates the need to poll for transaction status.
+
+### Register a Webhook
+
+```http
+POST https://payment-dev.banksim.ca/api/v1/webhooks
+Content-Type: application/json
+X-API-Key: dev-payment-api-key
+
+{
+  "merchantId": "ssim-client",
+  "url": "https://ssim-dev.banksim.ca/webhooks/payment",
+  "events": ["payment.authorized", "payment.captured", "payment.refunded", "payment.declined", "payment.expired"]
+}
+```
+
+**Response:**
+```json
+{
+  "id": "webhook-uuid",
+  "merchantId": "ssim-client",
+  "url": "https://ssim-dev.banksim.ca/webhooks/payment",
+  "events": ["payment.authorized", "payment.captured", "payment.refunded", "payment.declined", "payment.expired"],
+  "secret": "your-webhook-secret-for-signature-verification",
+  "createdAt": "2024-12-03T10:00:00Z"
+}
+```
+
+**Important:** Save the `secret` - you'll need it to verify webhook signatures.
+
+### Webhook Events
+
+| Event | Description |
+|-------|-------------|
+| `payment.authorized` | Payment authorized, funds held |
+| `payment.captured` | Payment captured/settled |
+| `payment.voided` | Authorization voided |
+| `payment.refunded` | Payment refunded |
+| `payment.declined` | Payment declined |
+| `payment.expired` | Authorization expired (7 days) |
+| `payment.failed` | Payment processing failed |
+
+### Webhook Payload
+
+```json
+{
+  "id": "webhook-delivery-uuid",
+  "event": "payment.authorized",
+  "timestamp": "2024-12-03T10:30:00Z",
+  "data": {
+    "transactionId": "550e8400-e29b-41d4-a716-446655440000",
+    "merchantId": "ssim-client",
+    "orderId": "order_12345",
+    "amount": 99.99,
+    "currency": "CAD",
+    "status": "authorized",
+    "authorizationCode": "AUTH-ABC12345"
+  }
+}
+```
+
+### Verify Webhook Signatures
+
+All webhooks include an HMAC-SHA256 signature in the `X-Webhook-Signature` header:
+
+```typescript
+import crypto from 'crypto';
+
+function verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(payload)
+    .digest('hex');
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
+}
+
+// In your webhook handler:
+app.post('/webhooks/payment', express.raw({ type: 'application/json' }), (req, res) => {
+  const signature = req.headers['x-webhook-signature'] as string;
+  const webhookId = req.headers['x-webhook-id'] as string;
+  const payload = req.body.toString();
+
+  if (!verifyWebhookSignature(payload, signature, process.env.WEBHOOK_SECRET!)) {
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+
+  const event = JSON.parse(payload);
+
+  switch (event.event) {
+    case 'payment.authorized':
+      // Update order status
+      break;
+    case 'payment.captured':
+      // Mark order as paid
+      break;
+    // ... handle other events
+  }
+
+  res.status(200).json({ received: true });
+});
+```
+
+### Webhook Management
+
+**List webhooks:**
+```http
+GET https://payment-dev.banksim.ca/api/v1/webhooks/merchant/ssim-client
+X-API-Key: dev-payment-api-key
+```
+
+**Update webhook:**
+```http
+PATCH https://payment-dev.banksim.ca/api/v1/webhooks/{webhookId}
+Content-Type: application/json
+X-API-Key: dev-payment-api-key
+
+{
+  "url": "https://new-url.example.com/webhooks",
+  "events": ["payment.authorized", "payment.captured"],
+  "isActive": true
+}
+```
+
+**Delete webhook:**
+```http
+DELETE https://payment-dev.banksim.ca/api/v1/webhooks/{webhookId}
+X-API-Key: dev-payment-api-key
+```
+
+### Webhook Retry Policy
+
+- Webhooks are retried up to 5 times on failure
+- Exponential backoff: 1s, 2s, 4s, 8s, 16s
+- Timeout: 10 seconds per delivery attempt
+- A successful delivery is any 2xx response
+
 ## Security Notes
 
 1. **Never expose your `client_secret` or `apiKey` in frontend code**
 2. **Store card tokens temporarily** - they expire in 24 hours
 3. **Always use HTTPS** in production
-4. **Validate webhook signatures** (when implemented)
+4. **Always validate webhook signatures** - use the secret returned when you registered the webhook
 
 ## Support
 
