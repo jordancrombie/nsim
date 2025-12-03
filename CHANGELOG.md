@@ -45,9 +45,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Port**: 3006 (configurable via PORT env)
 - **Accessible at**: https://payment.banksim.ca (via BSIM nginx proxy)
 
+- **BSIM HTTP Client** - Real integration with BSIM payment handler
+  - Replaced stub implementation with actual HTTP calls to BSIM
+  - Calls BSIM's `/api/payment-network/authorize` for payment authorization
+  - Calls BSIM's `/api/payment-network/capture` for capturing payments
+  - Calls BSIM's `/api/payment-network/void` for voiding authorizations
+  - Calls BSIM's `/api/payment-network/refund` for refunding payments
+  - Card token validation against BSIM consent records
+  - Configurable via `BSIM_BASE_URL` and `BSIM_API_KEY` environment variables
+
+- **Docker Support** - Production-ready containerization
+  - Multi-stage Dockerfile with builder and production stages
+  - Non-root user for security
+  - Health check endpoint configuration
+  - Integrated into BSIM's docker-compose.yml as `payment-network` service
+  - Accessible via nginx at `payment.banksim.ca` and `payment-dev.banksim.ca`
+
 ### Coming Soon
 - Redis queue for async payment processing
 - PostgreSQL for persistent transaction storage
-- Real BSIM integration (replacing stubs)
 - AWS SQS support for production queues
 - Webhook callbacks to merchants
