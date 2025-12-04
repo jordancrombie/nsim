@@ -369,17 +369,16 @@ describe('Payment Routes', () => {
       expect(captureResponse.status).toBe(200);
       expect(captureResponse.body.status).toBe('captured');
 
-      // Partial refund - Note: status stays 'captured' until full amount is refunded
-      // The route returns 400 for non-'refunded' status, so we check the response body
+      // Partial refund - status stays 'captured' until full amount is refunded
       const refundResponse = await request(app)
         .post(`/api/v1/payments/${transactionId}/refund`)
         .send({ amount: 40 });
 
-      // For partial refund, status stays 'captured' and route returns 400
-      // This is actually correct behavior - only full refunds get 200
+      // Partial refund is a successful operation, returns 200
+      expect(refundResponse.status).toBe(200);
       expect(refundResponse.body.refundedAmount).toBe(40);
       expect(refundResponse.body.refundId).toBeDefined();
-      // Status should be 'captured' since we only refunded 40 of 100
+      // Status stays 'captured' since we only refunded 40 of 100
       expect(refundResponse.body.status).toBe('captured');
     });
   });

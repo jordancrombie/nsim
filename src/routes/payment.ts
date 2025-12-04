@@ -85,7 +85,10 @@ router.post('/:transactionId/refund', async (req: Request, res: Response) => {
     };
 
     const response = await paymentService.refund(request);
-    res.status(response.status === 'refunded' ? 200 : 400).json(response);
+    // Return 200 for successful refunds (both partial and full)
+    // Partial refunds keep status as 'captured', full refunds change to 'refunded'
+    const isSuccess = response.status === 'refunded' || response.status === 'captured';
+    res.status(isSuccess ? 200 : 400).json(response);
   } catch (error) {
     console.error('Refund error:', error);
     res.status(500).json({ error: 'Refund failed' });

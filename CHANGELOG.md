@@ -62,10 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Accessible via nginx at `payment.banksim.ca` and `payment-dev.banksim.ca`
 
 - **Jest Testing Framework** - Comprehensive unit test coverage
-  - 60 tests covering BsimClient, PaymentService, and payment routes
+  - 117 tests across 8 test suites (~70% code coverage)
   - MockBsimClient for simulating BSIM payment responses
   - Tests for authorization, capture, void, and refund flows
   - Full payment lifecycle integration tests
+  - Webhook service and route tests (100% coverage)
+  - Health endpoint tests (100% coverage)
+  - Queue infrastructure tests (Redis, BullMQ)
   - ESM-compatible Jest configuration with ts-jest
   - Test commands: `npm test`, `npm run test:watch`, `npm run test:coverage`
 

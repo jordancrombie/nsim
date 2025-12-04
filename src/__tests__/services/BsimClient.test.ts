@@ -65,11 +65,17 @@ describe('BsimClient', () => {
     });
 
     it('should handle HTTP error responses', async () => {
-      mockFetch.mockResolvedValueOnce({
+      // Mock 500 error for all retry attempts (initial + 3 retries = 4 calls)
+      const errorResponse = {
         ok: false,
         status: 500,
         text: async () => 'Internal server error',
-      });
+      };
+      mockFetch
+        .mockResolvedValueOnce(errorResponse)
+        .mockResolvedValueOnce(errorResponse)
+        .mockResolvedValueOnce(errorResponse)
+        .mockResolvedValueOnce(errorResponse);
 
       const response = await client.authorize(validRequest);
 
