@@ -29,6 +29,9 @@ export class MockBsimClient {
   // Configuration
   public shouldFailNetwork = false;
   public networkErrorMessage = 'Network error';
+  public shouldFailCapture = false;
+  public shouldFailVoid = false;
+  public shouldFailRefund = false;
 
   constructor() {
     // Set up some default valid tokens
@@ -63,6 +66,9 @@ export class MockBsimClient {
     this.refundCalls = [];
     this.validateTokenCalls = [];
     this.shouldFailNetwork = false;
+    this.shouldFailCapture = false;
+    this.shouldFailVoid = false;
+    this.shouldFailRefund = false;
     // Re-add default tokens
     this.validTokens.add('ctok_valid_token_123');
     this.validTokens.add('ctok_test_token_456');
@@ -120,6 +126,13 @@ export class MockBsimClient {
       throw new Error(this.networkErrorMessage);
     }
 
+    if (this.shouldFailCapture) {
+      return {
+        success: false,
+        error: 'Capture failed',
+      };
+    }
+
     const auth = this.authorizations.get(request.authorizationCode);
     if (!auth) {
       return {
@@ -160,6 +173,13 @@ export class MockBsimClient {
       throw new Error(this.networkErrorMessage);
     }
 
+    if (this.shouldFailVoid) {
+      return {
+        success: false,
+        error: 'Void failed',
+      };
+    }
+
     const auth = this.authorizations.get(request.authorizationCode);
     if (!auth) {
       return {
@@ -191,6 +211,13 @@ export class MockBsimClient {
 
     if (this.shouldFailNetwork) {
       throw new Error(this.networkErrorMessage);
+    }
+
+    if (this.shouldFailRefund) {
+      return {
+        success: false,
+        error: 'Refund failed',
+      };
     }
 
     const auth = this.authorizations.get(request.authorizationCode);

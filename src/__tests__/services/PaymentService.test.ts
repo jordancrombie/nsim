@@ -302,6 +302,241 @@ describe('PaymentService', () => {
     });
   });
 
+  describe('capture - BSIM failures', () => {
+    let authorizedTransactionId: string;
+
+    beforeEach(async () => {
+      const authResponse = await paymentService.authorize({
+        merchantId: 'merchant-123',
+        merchantName: 'Test Store',
+        amount: 100,
+        currency: 'CAD',
+        cardToken: 'ctok_valid_token_123',
+        orderId: 'order-capture-fail-test-' + Date.now(),
+      });
+      authorizedTransactionId = authResponse.transactionId;
+    });
+
+    it('should handle BSIM capture failure', async () => {
+      mockBsimClient.shouldFailCapture = true;
+
+      const response = await paymentService.capture({
+        transactionId: authorizedTransactionId,
+      });
+
+      expect(response.status).toBe('failed');
+      // Check transaction has decline reason stored
+      const transaction = await paymentService.getTransaction(authorizedTransactionId);
+      expect(transaction!.declineReason).toBeDefined();
+    });
+
+    it('should handle BSIM capture network error', async () => {
+      mockBsimClient.shouldFailNetwork = true;
+
+      const response = await paymentService.capture({
+        transactionId: authorizedTransactionId,
+      });
+
+      expect(response.status).toBe('failed');
+      // Check transaction has network error as decline reason
+      const transaction = await paymentService.getTransaction(authorizedTransactionId);
+      expect(transaction!.declineReason).toBe('Network error');
+    });
+  });
+
+  describe('void - BSIM failures', () => {
+    let authorizedTransactionId: string;
+
+    beforeEach(async () => {
+      const authResponse = await paymentService.authorize({
+        merchantId: 'merchant-123',
+        merchantName: 'Test Store',
+        amount: 100,
+        currency: 'CAD',
+        cardToken: 'ctok_valid_token_123',
+        orderId: 'order-void-fail-test-' + Date.now(),
+      });
+      authorizedTransactionId = authResponse.transactionId;
+    });
+
+    it('should handle BSIM void failure', async () => {
+      mockBsimClient.shouldFailVoid = true;
+
+      const response = await paymentService.void({
+        transactionId: authorizedTransactionId,
+      });
+
+      expect(response.status).toBe('failed');
+      // Check transaction has decline reason stored
+      const transaction = await paymentService.getTransaction(authorizedTransactionId);
+      expect(transaction!.declineReason).toBeDefined();
+    });
+
+    it('should handle BSIM void network error', async () => {
+      mockBsimClient.shouldFailNetwork = true;
+
+      const response = await paymentService.void({
+        transactionId: authorizedTransactionId,
+      });
+
+      expect(response.status).toBe('failed');
+      // Check transaction has network error as decline reason
+      const transaction = await paymentService.getTransaction(authorizedTransactionId);
+      expect(transaction!.declineReason).toBe('Network error');
+    });
+  });
+
+  describe('refund - BSIM failures', () => {
+    let capturedTransactionId: string;
+
+    beforeEach(async () => {
+      const authResponse = await paymentService.authorize({
+        merchantId: 'merchant-123',
+        merchantName: 'Test Store',
+        amount: 100,
+        currency: 'CAD',
+        cardToken: 'ctok_valid_token_123',
+        orderId: 'order-refund-fail-test-' + Date.now(),
+      });
+      capturedTransactionId = authResponse.transactionId;
+      await paymentService.capture({ transactionId: capturedTransactionId });
+    });
+
+    it('should handle BSIM refund failure', async () => {
+      mockBsimClient.shouldFailRefund = true;
+
+      const response = await paymentService.refund({
+        transactionId: capturedTransactionId,
+      });
+
+      expect(response.status).toBe('failed');
+    });
+
+    it('should handle BSIM refund network error', async () => {
+      mockBsimClient.shouldFailNetwork = true;
+
+      const response = await paymentService.refund({
+        transactionId: capturedTransactionId,
+      });
+
+      expect(response.status).toBe('failed');
+    });
+  });
+
+  describe('getExpiredAuthorizations', () => {
+    it('should return empty array when no expired authorizations', async () => {
+      // Create a fresh authorization (not expired)
+      await paymentService.authorize({
+        merchantId: 'merchant-123',
+        merchantName: 'Test Store',
+        amount: 100,
+        currency: 'CAD',
+        cardToken: 'ctok_valid_token_123',
+        orderId: 'order-not-expired-' + Date.now(),
+      });
+
+      const expired = await paymentService.getExpiredAuthorizations();
+
+      // Fresh authorizations should not be expired
+      expect(expired.filter(t => t.orderId.includes('order-not-expired'))).toHaveLength(0);
+    });
+
+    it('should not include captured transactions', async () => {
+      const authResponse = await paymentService.authorize({
+        merchantId: 'merchant-123',
+        merchantName: 'Test Store',
+        amount: 100,
+        currency: 'CAD',
+        cardToken: 'ctok_valid_token_123',
+        orderId: 'order-captured-' + Date.now(),
+      });
+
+      await paymentService.capture({ transactionId: authResponse.transactionId });
+
+      const expired = await paymentService.getExpiredAuthorizations();
+      const capturedTxn = expired.find(t => t.id === authResponse.transactionId);
+
+      expect(capturedTxn).toBeUndefined();
+    });
+
+    it('should not include voided transactions', async () => {
+      const authResponse = await paymentService.authorize({
+        merchantId: 'merchant-123',
+        merchantName: 'Test Store',
+        amount: 100,
+        currency: 'CAD',
+        cardToken: 'ctok_valid_token_123',
+        orderId: 'order-voided-' + Date.now(),
+      });
+
+      await paymentService.void({ transactionId: authResponse.transactionId });
+
+      const expired = await paymentService.getExpiredAuthorizations();
+      const voidedTxn = expired.find(t => t.id === authResponse.transactionId);
+
+      expect(voidedTxn).toBeUndefined();
+    });
+  });
+
+  describe('expireAuthorization', () => {
+    it('should expire an authorized transaction', async () => {
+      const authResponse = await paymentService.authorize({
+        merchantId: 'merchant-123',
+        merchantName: 'Test Store',
+        amount: 100,
+        currency: 'CAD',
+        cardToken: 'ctok_valid_token_123',
+        orderId: 'order-expire-test-' + Date.now(),
+      });
+
+      await paymentService.expireAuthorization(authResponse.transactionId);
+
+      const transaction = await paymentService.getTransaction(authResponse.transactionId);
+      expect(transaction!.status).toBe('expired');
+    });
+
+    it('should do nothing for non-existent transaction', async () => {
+      // Should not throw
+      await paymentService.expireAuthorization('non-existent-id');
+    });
+
+    it('should do nothing for already captured transaction', async () => {
+      const authResponse = await paymentService.authorize({
+        merchantId: 'merchant-123',
+        merchantName: 'Test Store',
+        amount: 100,
+        currency: 'CAD',
+        cardToken: 'ctok_valid_token_123',
+        orderId: 'order-expire-captured-' + Date.now(),
+      });
+
+      await paymentService.capture({ transactionId: authResponse.transactionId });
+      await paymentService.expireAuthorization(authResponse.transactionId);
+
+      const transaction = await paymentService.getTransaction(authResponse.transactionId);
+      expect(transaction!.status).toBe('captured'); // Should still be captured
+    });
+
+    it('should handle BSIM void failure gracefully during expiry', async () => {
+      const authResponse = await paymentService.authorize({
+        merchantId: 'merchant-123',
+        merchantName: 'Test Store',
+        amount: 100,
+        currency: 'CAD',
+        cardToken: 'ctok_valid_token_123',
+        orderId: 'order-expire-bsim-fail-' + Date.now(),
+      });
+
+      mockBsimClient.shouldFailNetwork = true;
+
+      // Should not throw, should still mark as expired locally
+      await paymentService.expireAuthorization(authResponse.transactionId);
+
+      const transaction = await paymentService.getTransaction(authResponse.transactionId);
+      expect(transaction!.status).toBe('expired');
+    });
+  });
+
   describe('getTransaction', () => {
     it('should return transaction by ID', async () => {
       const authResponse = await paymentService.authorize({
