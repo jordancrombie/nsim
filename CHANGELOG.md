@@ -69,8 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ESM-compatible Jest configuration with ts-jest
   - Test commands: `npm test`, `npm run test:watch`, `npm run test:coverage`
 
+- **Queue System & Reliability** - BullMQ-based async processing
+  - Redis connection management with graceful shutdown
+  - Webhook delivery queue with retry logic (up to 5 retries with exponential backoff)
+  - Authorization expiry scheduler (voids authorizations after 7 days)
+  - HMAC-SHA256 webhook signature verification
+  - Webhook management API (register, list, update, delete)
+
 ### Coming Soon
-- Redis queue for async payment processing
 - PostgreSQL for persistent transaction storage
 - AWS SQS support for production queues
-- Webhook callbacks to merchants
+- OpenAPI Swagger UI at `/docs`

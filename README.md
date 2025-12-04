@@ -5,10 +5,11 @@ Payment network middleware connecting SSIM (Store Simulator) and BSIM (Bank Simu
 ## Overview
 
 NSIM routes payment requests from merchants (SSIM) to card issuers (BSIM), handling:
-- Payment authorization
-- Capture
+- Payment authorization with automatic expiry
+- Capture (full and partial)
 - Void
-- Refund
+- Refund (full and partial)
+- Webhook notifications to merchants
 
 ## Quick Start
 
@@ -25,13 +26,16 @@ npm run dev
 # Build for production
 npm run build
 npm start
+
+# Run tests
+npm test
 ```
 
 ## API Endpoints
 
 ### Health
 - `GET /health` - Service health check
-- `GET /health/ready` - Readiness check
+- `GET /health/ready` - Readiness check with dependency status
 
 ### Payments (v1)
 - `POST /api/v1/payments/authorize` - Request payment authorization
@@ -40,13 +44,41 @@ npm start
 - `POST /api/v1/payments/:transactionId/refund` - Refund captured payment
 - `GET /api/v1/payments/:transactionId` - Get transaction status
 
+### Webhooks (v1)
+- `POST /api/v1/webhooks` - Register webhook endpoint
+- `GET /api/v1/webhooks/merchant/:merchantId` - List merchant webhooks
+- `PATCH /api/v1/webhooks/:id` - Update webhook
+- `DELETE /api/v1/webhooks/:id` - Delete webhook
+
 ## Architecture
 
 ```
 SSIM (Merchant) → NSIM (Network) → BSIM (Issuer)
                        ↓
               Transaction Store
+                       ↓
+              Webhook Queue (BullMQ/Redis)
 ```
+
+### Payment Lifecycle
+
+```
+pending → authorized → captured → refunded
+    ↓           ↓          ↓
+  failed    declined    voided
+              ↓
+           expired (after 7 days)
+```
+
+### Webhook Events
+
+- `payment.authorized` - Payment authorized, funds held
+- `payment.captured` - Payment settled to merchant
+- `payment.voided` - Authorization cancelled
+- `payment.refunded` - Payment refunded to customer
+- `payment.declined` - Payment declined by issuer
+- `payment.expired` - Authorization expired
+- `payment.failed` - Processing error
 
 ## Configuration
 
@@ -54,10 +86,45 @@ SSIM (Merchant) → NSIM (Network) → BSIM (Issuer)
 |----------|-------------|---------|
 | PORT | Server port | 3006 |
 | BSIM_BASE_URL | BSIM backend URL | http://localhost:3002 |
-| USE_QUEUE | Enable async queue processing | false |
-| REDIS_HOST | Redis host (local) | localhost |
-| AWS_SQS_QUEUE_URL | SQS queue URL (prod) | - |
+| BSIM_API_KEY | API key for BSIM authentication | - |
+| BSIM_MAX_RETRIES | Retry attempts for BSIM calls | 3 |
+| BSIM_RETRY_DELAY_MS | Base retry delay | 500 |
+| AUTH_EXPIRY_HOURS | Authorization lifetime | 168 (7 days) |
+| REDIS_HOST | Redis host | localhost |
+| REDIS_PORT | Redis port | 6379 |
+| REDIS_PASSWORD | Redis password | - |
+| WEBHOOK_MAX_RETRIES | Webhook delivery retries | 5 |
+| WEBHOOK_RETRY_DELAY_MS | Webhook retry delay | 1000 |
+| WEBHOOK_TIMEOUT_MS | Webhook delivery timeout | 10000 |
 
-## Development
+## Integration
 
-This is a stub implementation for SSIM team integration. The BSIM client currently returns mock responses.
+NSIM provides full HTTP integration with BSIM for payment processing:
+
+- **Authorization** - Validates card tokens and holds funds via BSIM
+- **Capture** - Settles authorized payments through BSIM
+- **Void** - Cancels authorizations via BSIM
+- **Refund** - Returns funds through BSIM
+
+All BSIM calls include retry logic with exponential backoff for reliability.
+
+See [SSIM_INTEGRATION_GUIDE.md](SSIM_INTEGRATION_GUIDE.md) for merchant integration details.
+
+## Testing
+
+```bash
+npm test              # Run all tests
+npm run test:watch    # Watch mode
+npm run test:coverage # Coverage report
+```
+
+60+ unit tests covering payment flows, BSIM client, and API routes.
+
+## Docker
+
+```bash
+docker build -t nsim .
+docker run -p 3006:3006 nsim
+```
+
+Multi-stage build with non-root user for security. Integrated into BSIM's docker-compose as `payment-network` service.
