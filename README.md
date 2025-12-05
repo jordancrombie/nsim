@@ -50,14 +50,26 @@ npm test
 - `PATCH /api/v1/webhooks/:id` - Update webhook
 - `DELETE /api/v1/webhooks/:id` - Delete webhook
 
+### Diagnostics (v1)
+- `POST /api/v1/diagnostics/analyze-token` - Analyze card token (for debugging)
+- `GET /api/v1/diagnostics/token-types` - List supported token formats
+
 ## Architecture
 
 ```
-SSIM (Merchant) → NSIM (Network) → BSIM (Issuer)
-                       ↓
-              Transaction Store
-                       ↓
-              Webhook Queue (BullMQ/Redis)
+┌──────────────────────────────────────────────────────────────┐
+│                    Payment Flow                              │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  WSIM (Wallet) ──┐                                           │
+│                  ├──→ SSIM (Merchant) → NSIM → BSIM (Issuer) │
+│  Browser/App ────┘                       │                   │
+│                                          ↓                   │
+│                                 Transaction Store            │
+│                                          ↓                   │
+│                              Webhook Queue (BullMQ/Redis)    │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### Payment Lifecycle
@@ -110,6 +122,40 @@ All BSIM calls include retry logic with exponential backoff for reliability.
 
 See [SSIM_INTEGRATION_GUIDE.md](SSIM_INTEGRATION_GUIDE.md) for merchant integration details.
 
+### WSIM Wallet Integration
+
+NSIM supports wallet-initiated payments from WSIM (Wallet Simulator):
+
+```
+WSIM → BSIM (get wallet_payment_token) → SSIM → NSIM → BSIM (authorize)
+```
+
+**Supported Token Types:**
+| Prefix/Type | Source | Description |
+|-------------|--------|-------------|
+| `ctok_` | BSIM consent flow | Standard card token from user consent |
+| `wsim_bsim_` | WSIM wallet | Wallet payment token prefix |
+| `wallet_payment_token` | JWT type | JWT-based wallet token (5-min TTL) |
+| `payment_token` | JWT type | Standard payment token |
+
+**Token Flow:**
+1. User initiates payment in WSIM wallet
+2. WSIM requests `wallet_payment_token` JWT from BSIM
+3. WSIM passes token to SSIM merchant
+4. SSIM sends authorization request to NSIM
+5. NSIM forwards token to BSIM for validation and authorization
+6. BSIM validates JWT signature, expiry, and card status
+
+**Debugging Wallet Tokens:**
+```bash
+# Analyze a token without processing payment
+curl -X POST http://localhost:3006/api/v1/diagnostics/analyze-token \
+  -H "Content-Type: application/json" \
+  -d '{"cardToken": "your-token-here"}'
+```
+
+Returns token analysis including prefix, JWT claims, expiry status, and warnings.
+
 ## Testing
 
 ```bash
@@ -118,7 +164,7 @@ npm run test:watch    # Watch mode
 npm run test:coverage # Coverage report
 ```
 
-60+ unit tests covering payment flows, BSIM client, and API routes.
+172 unit tests across 12 test suites (~84% code coverage) covering payment flows, BSIM client, webhooks, and API routes.
 
 ## Docker
 

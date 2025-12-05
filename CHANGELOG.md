@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- **WSIM Wallet Payment Integration** - End-to-end wallet payment support
+  - Full integration with WSIM (Wallet Simulator) for wallet-initiated payments
+  - Support for `wallet_payment_token` JWT type from BSIM
+  - Support for `wsim_bsim_` prefixed tokens
+  - Token analysis and debugging utilities for troubleshooting
+  - Successful end-to-end transaction flow: WSIM → SSIM → NSIM → BSIM
+
 - **Initial Payment Network Service** - Express.js/TypeScript payment routing middleware
   - Routes payment requests between SSIM (merchants) and BSIM (card issuers)
   - Payment operations: authorize, capture, void, refund
