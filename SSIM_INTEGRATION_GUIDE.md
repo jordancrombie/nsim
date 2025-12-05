@@ -558,12 +558,200 @@ X-API-Key: dev-payment-api-key
 - Timeout: 10 seconds per delivery attempt
 - A successful delivery is any 2xx response
 
+## WSIM Wallet Integration (Coming Soon)
+
+In addition to the OAuth consent flow, SSIM can integrate with WSIM (Wallet Simulator) to offer customers a faster checkout experience using their saved wallet payment methods.
+
+### Integration Options
+
+Merchants can choose their preferred integration method based on UX requirements and technical capability:
+
+| Method | Complexity | UX Quality | Description |
+|--------|------------|------------|-------------|
+| **Popup** | Low | Good | Opens WSIM in popup window for card selection |
+| **iframe** | Medium | Best | Embeds card picker inline in checkout page |
+| **API** | High | Custom | Fetch cards via API, build your own UI |
+
+All methods result in a `wallet_payment_token` that you submit to NSIM exactly like a standard `card_token`.
+
+### Popup Integration (Recommended Starting Point)
+
+```javascript
+// 1. Open WSIM popup when user clicks "Pay with WSIM"
+function openWsimCheckout(amount, orderId) {
+  const params = new URLSearchParams({
+    merchantId: 'ssim-client',
+    merchantName: 'SSIM Store',
+    amount: amount.toString(),
+    currency: 'CAD',
+    orderId: orderId
+  });
+
+  const popup = window.open(
+    `https://wsim-auth-dev.banksim.ca/popup/card-picker?${params}`,
+    'wsim-payment',
+    'width=420,height=620,scrollbars=yes'
+  );
+
+  // Handle popup blocked
+  if (!popup) {
+    alert('Please allow popups to pay with WSIM');
+    return;
+  }
+}
+
+// 2. Listen for token from WSIM
+window.addEventListener('message', async (event) => {
+  // Verify origin
+  if (event.origin !== 'https://wsim-auth-dev.banksim.ca') return;
+
+  switch (event.data.type) {
+    case 'wsim:card-selected':
+      // User selected card and authenticated with passkey
+      const { token, cardLast4, cardBrand } = event.data;
+      console.log(`Payment authorized with ${cardBrand} ****${cardLast4}`);
+
+      // Submit to your backend → NSIM
+      await submitPayment(token, amount, orderId);
+      break;
+
+    case 'wsim:cancelled':
+      // User closed popup or cancelled
+      console.log('Payment cancelled:', event.data.reason);
+      break;
+
+    case 'wsim:error':
+      // Error occurred
+      console.error('WSIM error:', event.data.code, event.data.message);
+      break;
+  }
+});
+
+// 3. Submit payment to NSIM (same as OAuth flow)
+async function submitPayment(cardToken, amount, orderId) {
+  const response = await fetch('/api/checkout/complete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cardToken, amount, orderId })
+  });
+  // cardToken is the wallet_payment_token from WSIM
+  // Your backend calls NSIM authorize endpoint as usual
+}
+```
+
+### iframe Integration (Better UX)
+
+```html
+<!-- Embed WSIM card picker in your checkout page -->
+<div id="wsim-container">
+  <iframe
+    id="wsim-frame"
+    src="https://wsim-auth-dev.banksim.ca/embed/card-picker?merchantId=ssim-client&amount=99.99"
+    allow="publickey-credentials-get *"
+    style="width: 100%; border: none; min-height: 300px;"
+  ></iframe>
+</div>
+
+<script>
+// Handle iframe resize
+window.addEventListener('message', (event) => {
+  if (event.origin !== 'https://wsim-auth-dev.banksim.ca') return;
+
+  if (event.data.type === 'wsim:resize') {
+    document.getElementById('wsim-frame').style.height = event.data.height + 'px';
+  }
+
+  if (event.data.type === 'wsim:card-selected') {
+    submitPayment(event.data.token, amount, orderId);
+  }
+});
+</script>
+```
+
+**Note:** The `allow="publickey-credentials-get *"` attribute is required for passkey authentication to work within the iframe.
+
+### API Integration (Advanced)
+
+For merchants who want full control over the UI:
+
+```typescript
+// 1. Get user's cards (requires user authentication with WSIM)
+const cardsResponse = await fetch('https://wsim-auth-dev.banksim.ca/api/wallet/cards', {
+  headers: {
+    'Authorization': `Bearer ${wsimUserToken}`,
+    'X-Merchant-Id': 'ssim-client'
+  }
+});
+const { cards } = await cardsResponse.json();
+// cards = [{ id, last4, brand, expiryMonth, expiryYear }, ...]
+
+// 2. Render your own card picker UI
+// ...
+
+// 3. Request payment token for selected card
+const tokenResponse = await fetch('https://wsim-auth-dev.banksim.ca/api/wallet/payment-token', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${wsimUserToken}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    cardId: selectedCard.id,
+    amount: 99.99,
+    currency: 'CAD',
+    merchantId: 'ssim-client',
+    orderId: 'order_12345'
+  })
+});
+// This will trigger passkey authentication on the user's device
+const { token } = await tokenResponse.json();
+
+// 4. Submit to NSIM
+await submitPayment(token, amount, orderId);
+```
+
+### PostMessage Event Reference
+
+All integration methods use the same event protocol:
+
+| Event | Direction | Description |
+|-------|-----------|-------------|
+| `wsim:card-selected` | WSIM → Merchant | Card selected, contains `token`, `cardLast4`, `cardBrand` |
+| `wsim:cancelled` | WSIM → Merchant | User cancelled, contains `reason` |
+| `wsim:error` | WSIM → Merchant | Error occurred, contains `code`, `message` |
+| `wsim:auth-required` | WSIM → Merchant | User not logged in, contains `message` |
+| `wsim:resize` | WSIM → Merchant | iframe content height changed (iframe only) |
+
+### Passkey Authentication
+
+WSIM uses passkey (WebAuthn) authentication for payment confirmation:
+
+1. User selects a card in WSIM
+2. WSIM displays: "Confirm payment of $99.99 to SSIM Store"
+3. User authenticates with Face ID / Touch ID / Windows Hello
+4. On success, `wallet_payment_token` is issued and sent to merchant
+
+This provides strong authentication without passwords and prevents unauthorized payments.
+
+### WSIM URLs
+
+| Environment | Popup URL | iframe URL |
+|-------------|-----------|------------|
+| Development | `https://wsim-auth-dev.banksim.ca/popup/card-picker` | `https://wsim-auth-dev.banksim.ca/embed/card-picker` |
+| Production | `https://wsim-auth.banksim.ca/popup/card-picker` | `https://wsim-auth.banksim.ca/embed/card-picker` |
+
+### Implementation Status
+
+See [docs/IMPLEMENTATION_PLAN_EMBEDDED_WALLET.md](docs/IMPLEMENTATION_PLAN_EMBEDDED_WALLET.md) for current implementation status and roadmap.
+
 ## Security Notes
 
 1. **Never expose your `client_secret` or `apiKey` in frontend code**
 2. **Store card tokens temporarily** - they expire in 24 hours
 3. **Always use HTTPS** in production
 4. **Always validate webhook signatures** - use the secret returned when you registered the webhook
+5. **Validate postMessage origins** - always check `event.origin` before processing WSIM events
+6. **Wallet tokens expire in 5 minutes** - submit payment immediately after receiving token
 
 ## Support
 
