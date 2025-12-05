@@ -61,8 +61,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Integrated into BSIM's docker-compose.yml as `payment-network` service
   - Accessible via nginx at `payment.banksim.ca` and `payment-dev.banksim.ca`
 
+- **Token Diagnostics & Debugging** - Support for WSIM wallet payment integration
+  - Token analysis utility for debugging wallet payment tokens
+  - Detects token prefixes (`ctok_`, `wsim_bsim_`) and JWT format
+  - Decodes JWT claims (type, issuer, expiry) for debugging
+  - Enhanced authorization logging with token analysis
+  - Special logging for wallet token failures (WALLET TOKEN DECLINED)
+  - Diagnostic endpoints for token inspection:
+    - `POST /api/v1/diagnostics/analyze-token` - Analyze token without payment
+    - `GET /api/v1/diagnostics/token-types` - List supported token formats
+  - Expiry warnings for tokens near TTL (wallet tokens have 5-minute TTL)
+
 - **Jest Testing Framework** - Comprehensive unit test coverage
-  - 149 tests across 10 test suites (~84% code coverage)
+  - 172 tests across 12 test suites (~84% code coverage)
   - MockBsimClient for simulating BSIM payment responses
   - Tests for authorization, capture, void, and refund flows
   - Full payment lifecycle integration tests

@@ -16,6 +16,63 @@ import { BsimClient } from './bsim-client.js';
 import { sendWebhookNotification } from './webhook.js';
 
 /**
+ * Token analysis utilities for debugging wallet payment flow
+ */
+export interface TokenAnalysis {
+  prefix: string | null;
+  isJwt: boolean;
+  jwtPayload: Record<string, unknown> | null;
+  tokenType: string | null;
+  isWalletToken: boolean;
+  rawLength: number;
+}
+
+/**
+ * Analyze a card token to extract debugging information
+ * Supports both prefixed tokens (ctok_, wsim_bsim_) and JWT tokens
+ */
+export function analyzeCardToken(cardToken: string): TokenAnalysis {
+  const analysis: TokenAnalysis = {
+    prefix: null,
+    isJwt: false,
+    jwtPayload: null,
+    tokenType: null,
+    isWalletToken: false,
+    rawLength: cardToken.length,
+  };
+
+  // Check for known prefixes
+  const prefixMatch = cardToken.match(/^([a-z_]+_)/);
+  if (prefixMatch) {
+    analysis.prefix = prefixMatch[1];
+    analysis.isWalletToken = analysis.prefix === 'wsim_bsim_';
+  }
+
+  // Check if it's a JWT (three base64 segments separated by dots)
+  const jwtParts = cardToken.split('.');
+  if (jwtParts.length === 3) {
+    analysis.isJwt = true;
+    try {
+      // Decode the payload (second segment)
+      const payloadBase64 = jwtParts[1];
+      const payloadJson = Buffer.from(payloadBase64, 'base64').toString('utf-8');
+      const payload = JSON.parse(payloadJson);
+      analysis.jwtPayload = payload;
+      analysis.tokenType = payload.type || null;
+
+      // Check if it's a wallet payment token
+      if (payload.type === 'wallet_payment_token') {
+        analysis.isWalletToken = true;
+      }
+    } catch {
+      // JWT decode failed, leave payload as null
+    }
+  }
+
+  return analysis;
+}
+
+/**
  * In-memory transaction store (will be replaced with PostgreSQL)
  */
 const transactions = new Map<string, PaymentTransaction>();
@@ -30,6 +87,32 @@ export class PaymentService {
   async authorize(request: PaymentAuthorizationRequest): Promise<PaymentAuthorizationResponse> {
     const transactionId = randomUUID();
     const now = new Date();
+
+    // Analyze token for debugging (especially wallet payment tokens)
+    const tokenAnalysis = analyzeCardToken(request.cardToken);
+    console.log('[PaymentService] Authorization request received:', {
+      transactionId,
+      merchantId: request.merchantId,
+      orderId: request.orderId,
+      amount: request.amount,
+      currency: request.currency || 'CAD',
+      tokenAnalysis: {
+        prefix: tokenAnalysis.prefix,
+        isJwt: tokenAnalysis.isJwt,
+        tokenType: tokenAnalysis.tokenType,
+        isWalletToken: tokenAnalysis.isWalletToken,
+        rawLength: tokenAnalysis.rawLength,
+        // Log JWT claims if present (excluding sensitive data)
+        jwtClaims: tokenAnalysis.jwtPayload
+          ? {
+              type: tokenAnalysis.jwtPayload.type,
+              iss: tokenAnalysis.jwtPayload.iss,
+              exp: tokenAnalysis.jwtPayload.exp,
+              iat: tokenAnalysis.jwtPayload.iat,
+            }
+          : null,
+      },
+    });
 
     // Create transaction record
     const transaction: PaymentTransaction = {
@@ -52,6 +135,12 @@ export class PaymentService {
 
     // Call BSIM to authorize
     try {
+      console.log('[PaymentService] Forwarding to BSIM:', {
+        transactionId,
+        isWalletToken: tokenAnalysis.isWalletToken,
+        tokenType: tokenAnalysis.tokenType,
+      });
+
       const bsimResponse = await this.bsimClient.authorize({
         cardToken: request.cardToken,
         amount: request.amount,
@@ -60,15 +149,43 @@ export class PaymentService {
         orderId: request.orderId,
       });
 
+      console.log('[PaymentService] BSIM response:', {
+        transactionId,
+        approved: bsimResponse.approved,
+        declineReason: bsimResponse.declineReason,
+        hasAuthCode: !!bsimResponse.authorizationCode,
+      });
+
       if (bsimResponse.approved) {
         transaction.status = 'authorized';
         transaction.authorizationCode = bsimResponse.authorizationCode;
       } else {
         transaction.status = 'declined';
         transaction.declineReason = bsimResponse.declineReason;
+
+        // Enhanced logging for wallet token failures
+        if (tokenAnalysis.isWalletToken) {
+          console.warn('[PaymentService] WALLET TOKEN DECLINED:', {
+            transactionId,
+            tokenType: tokenAnalysis.tokenType,
+            declineReason: bsimResponse.declineReason,
+            prefix: tokenAnalysis.prefix,
+            jwtClaims: tokenAnalysis.jwtPayload
+              ? {
+                  type: tokenAnalysis.jwtPayload.type,
+                  exp: tokenAnalysis.jwtPayload.exp,
+                  iat: tokenAnalysis.jwtPayload.iat,
+                }
+              : null,
+          });
+        }
       }
     } catch (error) {
-      console.error('BSIM authorization failed:', error);
+      console.error('[PaymentService] BSIM authorization failed:', {
+        transactionId,
+        error: error instanceof Error ? error.message : String(error),
+        isWalletToken: tokenAnalysis.isWalletToken,
+      });
       transaction.status = 'failed';
       transaction.declineReason = 'Network error';
     }

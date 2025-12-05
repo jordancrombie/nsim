@@ -6,6 +6,7 @@ import { config } from './config/index.js';
 import paymentRoutes from './routes/payment.js';
 import healthRoutes from './routes/health.js';
 import webhookRoutes from './routes/webhook.js';
+import diagnosticsRoutes from './routes/diagnostics.js';
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use(express.json());
 app.use('/health', healthRoutes);
 app.use('/api/v1/payments', paymentRoutes);
 app.use('/api/v1/webhooks', webhookRoutes);
+app.use('/api/v1/diagnostics', diagnosticsRoutes);
 
 // Error handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
