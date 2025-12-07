@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/NSIM_LOGO.png" alt="NSIM Logo" width="200">
+  <img src="docs/images/NSIM_LOGO.png" alt="NSIM Logo" width="250">
 </p>
 
 # NSIM - Network Simulator
