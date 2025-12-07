@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/NSIM_LOGO.png" alt="NSIM Logo" width="200">
+</p>
+
 # NSIM - Network Simulator
 
 Payment network middleware connecting SSIM (Store Simulator) and BSIM (Bank Simulator).

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Project Logo** - Added NSIM branding to README
+
 - **WSIM Wallet Payment Integration** - End-to-end wallet payment support
   - Full integration with WSIM (Wallet Simulator) for wallet-initiated payments
   - Support for `wallet_payment_token` JWT type from BSIM
