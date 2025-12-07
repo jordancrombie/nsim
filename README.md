@@ -120,7 +120,7 @@ NSIM provides full HTTP integration with BSIM for payment processing:
 
 All BSIM calls include retry logic with exponential backoff for reliability.
 
-See [SSIM_INTEGRATION_GUIDE.md](SSIM_INTEGRATION_GUIDE.md) for merchant integration details.
+See [Merchant Integration Guide](docs/MERCHANT_INTEGRATION_GUIDE.md) for complete merchant integration details.
 
 ### WSIM Wallet Integration
 

@@ -318,5 +318,5 @@ checkout.open({
 ## Related Documents
 
 - [EMBEDDED_WALLET_PAYMENT.md](./EMBEDDED_WALLET_PAYMENT.md) - Technical design
-- [../SSIM_INTEGRATION_GUIDE.md](../SSIM_INTEGRATION_GUIDE.md) - Merchant integration guide
+- [MERCHANT_INTEGRATION_GUIDE.md](./MERCHANT_INTEGRATION_GUIDE.md) - Merchant integration guide
 - [../TODO.md](../TODO.md) - Project roadmap
