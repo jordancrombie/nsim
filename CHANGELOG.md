@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **E2E Test Suite** - Comprehensive Playwright-based end-to-end testing
+  - Full BSIM → WSIM → NSIM flow testing capability
+  - BSIM helpers: account creation, login, passkey registration, credit card creation
+  - WSIM helpers: OAuth enrollment, card import, dashboard verification
+  - WebAuthn virtual authenticator for passkey testing (Chrome DevTools Protocol)
+  - Multi-environment support (dev/prod/local) via `TEST_ENV` variable
+  - Global setup/teardown for automatic test user cleanup
+  - Test fixtures for users, cards, and environment URLs
+  - NPM scripts: `test:e2e`, `test:e2e:ui`, `test:e2e:debug`
+  - Implementation plan documented in `docs/IMPLEMENTATION_PLAN_E2E_TESTS.md`
+
 - **Project Logo** - Added NSIM branding to README
 
 - **WSIM Wallet Payment Integration** - End-to-end wallet payment support
