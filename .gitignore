@@ -3,3 +3,7 @@ dist/
 .env
 *.log
 .DS_Store
+coverage/
+
+# Local deployment plans - shared via filesystem, not git
+LOCAL_DEPLOYMENT_PLANS/
