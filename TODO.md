@@ -20,9 +20,10 @@
   - Webhook management API (CRUD)
 
 - [x] **Testing**
-  - 172 unit tests across 12 test suites
+  - 170 unit tests across 12 test suites
   - ~84% code coverage
   - MockBsimClient for isolated testing
+  - E2E tests moved to WSIM repo for centralized cross-service testing
 
 - [x] **Infrastructure**
   - Docker support with multi-stage builds

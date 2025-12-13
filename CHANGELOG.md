@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **E2E Test Suite Moved to WSIM** - The Playwright E2E tests were moved to the WSIM repository for centralized cross-service testing. NSIM retains 170 unit tests with ~84% coverage.
+
 ### Added
 
 - **Project Logo** - Added NSIM branding to README
@@ -83,7 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Expiry warnings for tokens near TTL (wallet tokens have 5-minute TTL)
 
 - **Jest Testing Framework** - Comprehensive unit test coverage
-  - 172 tests across 12 test suites (~84% code coverage)
+  - 170 tests across 12 test suites (~84% code coverage)
   - MockBsimClient for simulating BSIM payment responses
   - Tests for authorization, capture, void, and refund flows
   - Full payment lifecycle integration tests

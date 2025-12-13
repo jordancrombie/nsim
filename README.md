@@ -168,7 +168,7 @@ npm run test:watch    # Watch mode
 npm run test:coverage # Coverage report
 ```
 
-172 unit tests across 12 test suites (~84% code coverage) covering payment flows, BSIM client, webhooks, and API routes.
+170 unit tests across 12 test suites (~84% code coverage) covering payment flows, BSIM client, webhooks, and API routes.
 
 ## Docker
 
