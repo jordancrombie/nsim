@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 // Parse Redis URL or use individual components
 const parseRedisConfig = () => {
