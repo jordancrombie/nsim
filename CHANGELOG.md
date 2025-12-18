@@ -9,7 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **E2E Test Suite Moved to WSIM** - The Playwright E2E tests were moved to the WSIM repository for centralized cross-service testing. NSIM retains 170 unit tests with ~84% coverage.
+- **E2E Test Suite Moved to WSIM** - The Playwright E2E tests were moved to the WSIM repository for centralized cross-service testing. NSIM retains 170 unit tests with ~85% coverage.
+
+### Maintenance
+
+- **Build Maintenance Improvements** (2025-12-18)
+  - Updated bullmq from 5.65.1 to 5.66.1 (patch release)
+  - Updated @types/node from v24 to v25 for Node.js 25.x type definitions
+  - Added `engines` field to package.json enforcing Node.js >=20.0.0
+  - Suppressed dotenv promotional messages with `{ quiet: true }` option
+  - Build passes cleanly with no warnings
+  - All 170 tests passing, ~85% code coverage
+  - Zero security vulnerabilities (npm audit clean)
 
 ### Added
 
