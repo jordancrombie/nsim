@@ -4,17 +4,27 @@ info:
   description: |
     Payment network API for routing payment requests between merchants (SSIM) and card issuers (BSIM).
 
+    NSIM supports **multi-bank routing** - cards from different BSIM instances (banks) are automatically
+    routed to the correct issuer based on the card token format.
+
     ## Authentication
     All payment endpoints require a valid API key passed in the `X-API-Key` header.
 
+    ## Multi-Bank Token Formats
+    Card tokens contain the issuing bank identifier:
+    - `wsim_bsim_xxx` → Routes to Bank Simulator (default BSIM)
+    - `wsim_newbank_xxx` → Routes to NewBank BSIM instance
+    - `ctok_xxx` → Consent token from default BSIM (OAuth flow)
+
     ## Payment Flow
     1. User completes OAuth consent at BSIM, selecting a card for payment
-    2. BSIM issues a `cardToken` to the merchant
+    2. BSIM issues a `cardToken` to the merchant (or WSIM issues wallet token)
     3. Merchant calls NSIM `/authorize` with the card token
-    4. NSIM routes to BSIM, which creates an authorization hold
-    5. Merchant captures the payment when goods are shipped
-    6. Optional: void or refund as needed
-  version: 1.0.0
+    4. NSIM extracts the bank ID from the token and routes to the correct BSIM
+    5. BSIM creates an authorization hold on the card
+    6. Merchant captures the payment when goods are shipped
+    7. Optional: void or refund as needed
+  version: 1.1.0
   contact:
     name: BSIM Team
     url: https://github.com/jordancrombie/nsim
@@ -254,8 +264,12 @@ components:
           example: CAD
         cardToken:
           type: string
-          description: Token representing the consented card (from OAuth flow)
-          example: tok_xyz789
+          description: |
+            Token representing the consented card. Format determines routing:
+            - `wsim_{bsimId}_xxx` - Wallet token from WSIM (routes to specified bank)
+            - `ctok_xxx` - Consent token from OAuth flow (routes to default bank)
+            - JWT format - May contain bsimId claim for routing
+          example: wsim_bsim_abc123def456
         orderId:
           type: string
           description: Merchant's order identifier

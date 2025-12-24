@@ -12,6 +12,25 @@ jest.unstable_mockModule('../../services/bsim-client', () => ({
   BsimClient: jest.fn().mockImplementation(() => mockBsimClient),
 }));
 
+// Mock the bsim-registry to return our mock providers
+jest.unstable_mockModule('../../services/bsim-registry', () => ({
+  bsimRegistry: {
+    listProviders: () => [
+      { bsimId: 'bsim', name: 'Bank Simulator', baseUrl: 'http://localhost:3001', apiKey: 'test-key' },
+    ],
+    getProvider: (bsimId: string) =>
+      bsimId === 'bsim'
+        ? { bsimId: 'bsim', name: 'Bank Simulator', baseUrl: 'http://localhost:3001', apiKey: 'test-key' }
+        : undefined,
+    getDefaultProvider: () => ({
+      bsimId: 'bsim',
+      name: 'Bank Simulator',
+      baseUrl: 'http://localhost:3001',
+      apiKey: 'test-key',
+    }),
+  },
+}));
+
 // Dynamic imports after mock setup
 const { default: paymentRoutes } = await import('../../routes/payment');
 

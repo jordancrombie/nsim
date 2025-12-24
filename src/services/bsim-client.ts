@@ -1,8 +1,10 @@
-import { config } from '../config/index.js';
+import { config, BsimProvider } from '../config/index.js';
 
 /**
  * Client for communicating with BSIM payment handler
  * Makes HTTP calls to BSIM's /api/payment-network endpoints
+ *
+ * Supports multi-BSIM routing by accepting provider config in constructor.
  */
 
 /**
@@ -92,10 +94,30 @@ export interface BsimRefundResponse {
 export class BsimClient {
   private baseUrl: string;
   private apiKey: string;
+  private bsimId: string;
 
-  constructor() {
-    this.baseUrl = config.bsim.baseUrl;
-    this.apiKey = config.bsim.apiKey;
+  /**
+   * Create a BSIM client
+   * @param provider - Optional BSIM provider config. If not provided, uses default config.
+   */
+  constructor(provider?: BsimProvider) {
+    if (provider) {
+      this.baseUrl = provider.baseUrl;
+      this.apiKey = provider.apiKey;
+      this.bsimId = provider.bsimId;
+    } else {
+      // Legacy single-BSIM mode
+      this.baseUrl = config.bsim.baseUrl;
+      this.apiKey = config.bsim.apiKey;
+      this.bsimId = 'bsim';
+    }
+  }
+
+  /**
+   * Get the BSIM ID this client is configured for
+   */
+  getBsimId(): string {
+    return this.bsimId;
   }
 
   private async makeRequest<T>(endpoint: string, body: object): Promise<T> {

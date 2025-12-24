@@ -18,6 +18,7 @@ export class MockBsimClient {
   private authorizationResponses: Map<string, BsimAuthorizationResponse> = new Map();
   private validTokens: Set<string> = new Set();
   private authorizations: Map<string, { amount: number; captured: boolean; voided: boolean }> = new Map();
+  private bsimId: string;
 
   // Call tracking
   public authorizeCalls: BsimAuthorizationRequest[] = [];
@@ -33,10 +34,19 @@ export class MockBsimClient {
   public shouldFailVoid = false;
   public shouldFailRefund = false;
 
-  constructor() {
+  constructor(provider?: { bsimId: string; baseUrl: string; apiKey: string }) {
+    // Set up bsimId from provider or default
+    this.bsimId = provider?.bsimId || 'bsim';
     // Set up some default valid tokens
     this.validTokens.add('ctok_valid_token_123');
     this.validTokens.add('ctok_test_token_456');
+  }
+
+  /**
+   * Get the BSIM ID this client is configured for
+   */
+  getBsimId(): string {
+    return this.bsimId;
   }
 
   /**
