@@ -61,20 +61,33 @@ npm test
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                    Payment Flow                              │
-├──────────────────────────────────────────────────────────────┤
-│                                                              │
-│  WSIM (Wallet) ──┐                                           │
-│                  ├──→ SSIM (Merchant) → NSIM → BSIM (Issuer) │
-│  Browser/App ────┘                       │                   │
-│                                          ↓                   │
-│                                 Transaction Store            │
-│                                          ↓                   │
-│                              Webhook Queue (BullMQ/Redis)    │
-│                                                              │
-└──────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                    Payment Flow (Multi-Bank)                        │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  WSIM (Wallet) ──┐                              ┌→ BSIM (Default)  │
+│                  ├──→ SSIM (Merchant) → NSIM ───┤                  │
+│  Browser/App ────┘                       │      └→ NewBank BSIM    │
+│                                          ↓                         │
+│                                 Transaction Store                  │
+│                                          ↓                         │
+│                              Webhook Queue (BullMQ/Redis)          │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
 ```
+
+### Multi-Bank Routing
+
+NSIM supports routing payments to multiple BSIM (bank) instances. The target bank is determined from the card token:
+
+| Token Format | Routing |
+|--------------|---------|
+| `wsim_bsim_xxx` | Routes to default BSIM |
+| `wsim_newbank_xxx` | Routes to NewBank BSIM |
+| `ctok_xxx` | Routes to default BSIM (consent flow) |
+| JWT with `bsimId` claim | Routes based on claim value |
+
+Transactions store the originating `bsimId` so subsequent operations (capture, void, refund) are routed to the correct bank.
 
 ### Payment Lifecycle
 
@@ -98,14 +111,46 @@ pending → authorized → captured → refunded
 
 ## Configuration
 
+### Core Settings
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | PORT | Server port | 3006 |
-| BSIM_BASE_URL | BSIM backend URL | http://localhost:3002 |
-| BSIM_API_KEY | API key for BSIM authentication | - |
+| AUTH_EXPIRY_HOURS | Authorization lifetime | 168 (7 days) |
 | BSIM_MAX_RETRIES | Retry attempts for BSIM calls | 3 |
 | BSIM_RETRY_DELAY_MS | Base retry delay | 500 |
-| AUTH_EXPIRY_HOURS | Authorization lifetime | 168 (7 days) |
+
+### BSIM Connection (Single Bank)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| BSIM_BASE_URL | Default BSIM backend URL | http://localhost:3001 |
+| BSIM_API_KEY | API key for default BSIM | dev-payment-api-key |
+
+### Multi-Bank Configuration
+
+Add additional banks using individual environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| BSIM_NEWBANK_URL | NewBank BSIM URL | - |
+| BSIM_NEWBANK_KEY | NewBank API key | dev-newbank-api-key |
+| BSIM_NEWBANK_NAME | NewBank display name | New Bank |
+| DEFAULT_BSIM_ID | Default bank for unknown tokens | bsim |
+
+Or use JSON format for all providers:
+
+```bash
+BSIM_PROVIDERS='[
+  {"bsimId":"bsim","name":"Bank Simulator","baseUrl":"http://backend:3001","apiKey":"xxx"},
+  {"bsimId":"newbank","name":"New Bank","baseUrl":"http://newbank:3001","apiKey":"xxx"}
+]'
+```
+
+### Redis & Webhooks
+
+| Variable | Description | Default |
+|----------|-------------|---------|
 | REDIS_HOST | Redis host | localhost |
 | REDIS_PORT | Redis port | 6379 |
 | REDIS_PASSWORD | Redis password | - |
@@ -138,9 +183,10 @@ WSIM → BSIM (get wallet_payment_token) → SSIM → NSIM → BSIM (authorize)
 | Prefix/Type | Source | Description |
 |-------------|--------|-------------|
 | `ctok_` | BSIM consent flow | Standard card token from user consent |
-| `wsim_bsim_` | WSIM wallet | Wallet payment token prefix |
-| `wallet_payment_token` | JWT type | JWT-based wallet token (5-min TTL) |
-| `payment_token` | JWT type | Standard payment token |
+| `wsim_bsim_` | WSIM wallet | Wallet token from default BSIM |
+| `wsim_newbank_` | WSIM wallet | Wallet token from NewBank BSIM |
+| `wsim_{bsimId}_` | WSIM wallet | Wallet token from any configured BSIM |
+| `wallet_payment_token` | JWT type | JWT-based wallet token (5-min TTL, must include `bsimId` claim) |
 
 **Token Flow:**
 1. User initiates payment in WSIM wallet
@@ -168,7 +214,7 @@ npm run test:watch    # Watch mode
 npm run test:coverage # Coverage report
 ```
 
-170 unit tests across 12 test suites (~84% code coverage) covering payment flows, BSIM client, webhooks, and API routes.
+181 unit tests across 13 test suites (~85% code coverage) covering payment flows, multi-BSIM routing, webhooks, and API routes.
 
 ## Docker
 

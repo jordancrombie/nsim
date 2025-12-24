@@ -93,6 +93,8 @@ export interface PaymentTransaction {
   createdAt: Date;
   updatedAt: Date;
   expiresAt?: Date;
+  /** The BSIM instance that processed this transaction (for multi-bank routing) */
+  bsimId?: string;
 }
 
 export interface QueuedPaymentJob {

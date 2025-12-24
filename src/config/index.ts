@@ -15,15 +15,71 @@ const parseRedisConfig = () => {
   };
 };
 
+// BSIM Provider configuration
+export interface BsimProvider {
+  bsimId: string;
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+}
+
+// Parse BSIM providers from environment
+// Supports:
+//   1. BSIM_PROVIDERS JSON array: [{"bsimId":"bsim","name":"Bank Simulator","baseUrl":"...","apiKey":"..."}]
+//   2. Individual env vars: BSIM_NEWBANK_URL, BSIM_NEWBANK_KEY, BSIM_NEWBANK_NAME
+//   3. Legacy single BSIM: BSIM_BASE_URL, BSIM_API_KEY (becomes default "bsim" provider)
+const parseBsimProviders = (): BsimProvider[] => {
+  const providers: BsimProvider[] = [];
+
+  // Try JSON format first
+  const providersJson = process.env.BSIM_PROVIDERS;
+  if (providersJson) {
+    try {
+      const parsed = JSON.parse(providersJson);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      console.error('[Config] Failed to parse BSIM_PROVIDERS JSON, falling back to env vars');
+    }
+  }
+
+  // Default/primary BSIM (legacy support)
+  providers.push({
+    bsimId: 'bsim',
+    name: process.env.BSIM_DEFAULT_NAME || 'Bank Simulator',
+    baseUrl: process.env.BSIM_DEFAULT_URL || process.env.BSIM_BASE_URL || 'http://localhost:3001',
+    apiKey: process.env.BSIM_DEFAULT_KEY || process.env.BSIM_API_KEY || 'dev-payment-api-key',
+  });
+
+  // NewBank BSIM (if configured)
+  if (process.env.BSIM_NEWBANK_URL) {
+    providers.push({
+      bsimId: 'newbank',
+      name: process.env.BSIM_NEWBANK_NAME || 'New Bank',
+      baseUrl: process.env.BSIM_NEWBANK_URL,
+      apiKey: process.env.BSIM_NEWBANK_KEY || 'dev-newbank-api-key',
+    });
+  }
+
+  return providers;
+};
+
 export const config = {
   port: parseInt(process.env.PORT || '3006', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
 
-  // BSIM connection
+  // BSIM connection (legacy single-provider config for backward compatibility)
   bsim: {
     baseUrl: process.env.BSIM_BASE_URL || 'http://localhost:3001',
     apiKey: process.env.BSIM_API_KEY || 'dev-payment-api-key',
   },
+
+  // Multi-BSIM provider registry
+  bsimProviders: parseBsimProviders(),
+
+  // Default BSIM ID for tokens without bsimId prefix
+  defaultBsimId: process.env.DEFAULT_BSIM_ID || 'bsim',
 
   // Redis for job queue
   redis: parseRedisConfig(),

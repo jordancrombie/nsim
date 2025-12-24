@@ -13,6 +13,7 @@ import {
   PaymentStatus,
 } from '../types/payment.js';
 import { BsimClient } from './bsim-client.js';
+import { bsimRegistry } from './bsim-registry.js';
 import { sendWebhookNotification } from './webhook.js';
 
 /**
@@ -20,6 +21,7 @@ import { sendWebhookNotification } from './webhook.js';
  */
 export interface TokenAnalysis {
   prefix: string | null;
+  bsimId: string | null;
   isJwt: boolean;
   jwtPayload: Record<string, unknown> | null;
   tokenType: string | null;
@@ -29,11 +31,17 @@ export interface TokenAnalysis {
 
 /**
  * Analyze a card token to extract debugging information
- * Supports both prefixed tokens (ctok_, wsim_bsim_) and JWT tokens
+ * Supports both prefixed tokens (ctok_, wsim_{bsimId}_) and JWT tokens
+ *
+ * Token formats:
+ *   - wsim_{bsimId}_{hash} → wallet token from specific BSIM (e.g., wsim_newbank_652eb18344a9)
+ *   - ctok_{...} → consent token from default BSIM
+ *   - JWT with bsimId claim → wallet payment token with embedded bsimId
  */
 export function analyzeCardToken(cardToken: string): TokenAnalysis {
   const analysis: TokenAnalysis = {
     prefix: null,
+    bsimId: null,
     isJwt: false,
     jwtPayload: null,
     tokenType: null,
@@ -41,11 +49,23 @@ export function analyzeCardToken(cardToken: string): TokenAnalysis {
     rawLength: cardToken.length,
   };
 
-  // Check for known prefixes
-  const prefixMatch = cardToken.match(/^([a-z_]+_)/);
-  if (prefixMatch) {
-    analysis.prefix = prefixMatch[1];
-    analysis.isWalletToken = analysis.prefix === 'wsim_bsim_';
+  // Check for wsim_{bsimId}_ format first (e.g., wsim_newbank_652eb18344a9)
+  const wsimMatch = cardToken.match(/^(wsim_([a-z0-9]+)_)/);
+  if (wsimMatch) {
+    analysis.prefix = wsimMatch[1];
+    analysis.bsimId = wsimMatch[2];
+    analysis.isWalletToken = true;
+  } else {
+    // Check for other known prefixes (ctok_, etc.)
+    const prefixMatch = cardToken.match(/^([a-z_]+_)/);
+    if (prefixMatch) {
+      analysis.prefix = prefixMatch[1];
+      // Legacy wsim_bsim_ format for backward compatibility
+      if (analysis.prefix === 'wsim_bsim_') {
+        analysis.isWalletToken = true;
+        analysis.bsimId = 'bsim';
+      }
+    }
   }
 
   // Check if it's a JWT (three base64 segments separated by dots)
@@ -59,6 +79,11 @@ export function analyzeCardToken(cardToken: string): TokenAnalysis {
       const payload = JSON.parse(payloadJson);
       analysis.jwtPayload = payload;
       analysis.tokenType = payload.type || null;
+
+      // Extract bsimId from JWT if present
+      if (payload.bsimId && !analysis.bsimId) {
+        analysis.bsimId = payload.bsimId;
+      }
 
       // Check if it's a wallet payment token
       if (payload.type === 'wallet_payment_token') {
@@ -78,26 +103,65 @@ export function analyzeCardToken(cardToken: string): TokenAnalysis {
 const transactions = new Map<string, PaymentTransaction>();
 
 export class PaymentService {
-  private bsimClient: BsimClient;
+  /** Cache of BSIM clients by bsimId for multi-bank routing */
+  private bsimClients: Map<string, BsimClient> = new Map();
 
   constructor() {
-    this.bsimClient = new BsimClient();
+    // Pre-initialize clients for all configured providers
+    for (const provider of bsimRegistry.listProviders()) {
+      this.bsimClients.set(provider.bsimId, new BsimClient(provider));
+    }
+    console.log(
+      `[PaymentService] Initialized with ${this.bsimClients.size} BSIM client(s):`,
+      Array.from(this.bsimClients.keys()).join(', ')
+    );
+  }
+
+  /**
+   * Get the BSIM client for a given bsimId
+   * Falls back to default if not found
+   */
+  private getBsimClient(bsimId: string | null): BsimClient {
+    const effectiveBsimId = bsimId || config.defaultBsimId;
+
+    // Try to get cached client
+    const client = this.bsimClients.get(effectiveBsimId);
+    if (client) {
+      return client;
+    }
+
+    // Fall back to default client
+    const defaultClient = this.bsimClients.get(config.defaultBsimId);
+    if (defaultClient) {
+      console.warn(
+        `[PaymentService] Unknown bsimId "${effectiveBsimId}", falling back to default "${config.defaultBsimId}"`
+      );
+      return defaultClient;
+    }
+
+    // Last resort: create a legacy client
+    console.error('[PaymentService] No BSIM clients available, creating legacy client');
+    return new BsimClient();
   }
 
   async authorize(request: PaymentAuthorizationRequest): Promise<PaymentAuthorizationResponse> {
     const transactionId = randomUUID();
     const now = new Date();
 
-    // Analyze token for debugging (especially wallet payment tokens)
+    // Analyze token for debugging and BSIM routing
     const tokenAnalysis = analyzeCardToken(request.cardToken);
+    const bsimId = tokenAnalysis.bsimId || config.defaultBsimId;
+
     console.log('[PaymentService] Authorization request received:', {
       transactionId,
       merchantId: request.merchantId,
       orderId: request.orderId,
       amount: request.amount,
       currency: request.currency || 'CAD',
+      bsimId,
       tokenAnalysis: {
         prefix: tokenAnalysis.prefix,
+        bsimId: tokenAnalysis.bsimId,
         isJwt: tokenAnalysis.isJwt,
         tokenType: tokenAnalysis.tokenType,
         isWalletToken: tokenAnalysis.isWalletToken,
@@ -114,7 +178,7 @@ export class PaymentService {
       },
     });
 
-    // Create transaction record
+    // Create transaction record with bsimId for later operations
     const transaction: PaymentTransaction = {
       id: transactionId,
       merchantId: request.merchantId,
@@ -131,17 +195,22 @@ export class PaymentService {
       createdAt: now,
       updatedAt: now,
       expiresAt: new Date(now.getTime() + config.authorizationExpiryHours * 60 * 60 * 1000),
+      bsimId,
     };
+
+    // Get the correct BSIM client based on token's bsimId
+    const bsimClient = this.getBsimClient(bsimId);
 
     // Call BSIM to authorize
     try {
       console.log('[PaymentService] Forwarding to BSIM:', {
         transactionId,
+        bsimId: bsimClient.getBsimId(),
         isWalletToken: tokenAnalysis.isWalletToken,
         tokenType: tokenAnalysis.tokenType,
       });
 
-      const bsimResponse = await this.bsimClient.authorize({
+      const bsimResponse = await bsimClient.authorize({
         cardToken: request.cardToken,
         amount: request.amount,
         merchantId: request.merchantId,
@@ -244,9 +313,12 @@ export class PaymentService {
 
     const captureAmount = request.amount ?? transaction.amount;
 
+    // Get the correct BSIM client based on transaction's bsimId
+    const bsimClient = this.getBsimClient(transaction.bsimId || null);
+
     // Call BSIM to capture
     try {
-      const bsimResponse = await this.bsimClient.capture({
+      const bsimResponse = await bsimClient.capture({
         authorizationCode: transaction.authorizationCode!,
         amount: captureAmount,
       });
@@ -307,9 +379,12 @@ export class PaymentService {
       };
     }
 
+    // Get the correct BSIM client based on transaction's bsimId
+    const bsimClient = this.getBsimClient(transaction.bsimId || null);
+
     // Call BSIM to void
     try {
-      const bsimResponse = await this.bsimClient.void({
+      const bsimResponse = await bsimClient.void({
         authorizationCode: transaction.authorizationCode!,
       });
 
@@ -373,9 +448,12 @@ export class PaymentService {
 
     const refundAmount = request.amount ?? (transaction.capturedAmount - transaction.refundedAmount);
 
+    // Get the correct BSIM client based on transaction's bsimId
+    const bsimClient = this.getBsimClient(transaction.bsimId || null);
+
     // Call BSIM to refund
     try {
-      const bsimResponse = await this.bsimClient.refund({
+      const bsimResponse = await bsimClient.refund({
         authorizationCode: transaction.authorizationCode!,
         amount: refundAmount,
       });
@@ -463,10 +541,13 @@ export class PaymentService {
       return;
     }
 
+    // Get the correct BSIM client based on transaction's bsimId
+    const bsimClient = this.getBsimClient(transaction.bsimId || null);
+
     // Try to void with BSIM (but don't fail if BSIM is down)
     try {
       if (transaction.authorizationCode) {
-        await this.bsimClient.void({
+        await bsimClient.void({
           authorizationCode: transaction.authorizationCode,
         });
       }

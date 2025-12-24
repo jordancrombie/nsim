@@ -7,9 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Multi-BSIM Support** - Payment routing to multiple BSIM (bank) instances
+  - BSIM provider registry with env-based configuration
+  - Automatic bank detection from token format: `wsim_{bsimId}_xxx`
+  - Support for NewBank and future bank instances
+  - Token analysis extracts `bsimId` for intelligent routing
+  - Transactions track originating BSIM for capture/void/refund
+  - Environment variables: `BSIM_NEWBANK_URL`, `BSIM_NEWBANK_KEY`, or `BSIM_PROVIDERS` JSON
+  - OpenAPI spec updated to v1.1.0 with multi-bank documentation
+  - 181 tests passing (11 new routing tests)
+
 ### Changed
 
-- **E2E Test Suite Moved to WSIM** - The Playwright E2E tests were moved to the WSIM repository for centralized cross-service testing. NSIM retains 170 unit tests with ~85% coverage.
+- **E2E Test Suite Moved to WSIM** - The Playwright E2E tests were moved to the WSIM repository for centralized cross-service testing. NSIM retains 181 unit tests with ~85% coverage.
 
 ### Maintenance
 
