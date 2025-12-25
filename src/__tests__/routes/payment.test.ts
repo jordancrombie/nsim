@@ -1,11 +1,12 @@
-import { jest, describe, it, expect, beforeAll, beforeEach } from '@jest/globals';
+import { jest, describe, it, expect, beforeAll, beforeEach, afterEach } from '@jest/globals';
 import express, { Express } from 'express';
 import request from 'supertest';
 import { MockBsimClient } from '../mocks/MockBsimClient';
+import { MockPaymentRepository } from '../mocks/MockPaymentRepository';
 
-// Create a single mock instance that persists for all tests
-// The routes module creates a singleton PaymentService, so we need a consistent mock
+// Create shared mock instances
 const mockBsimClient = new MockBsimClient();
+let mockPaymentRepository: MockPaymentRepository;
 
 // Mock the BsimClient
 jest.unstable_mockModule('../../services/bsim-client', () => ({
@@ -31,8 +32,33 @@ jest.unstable_mockModule('../../services/bsim-registry', () => ({
   },
 }));
 
+// Mock the webhook service to avoid database calls
+jest.unstable_mockModule('../../services/webhook', () => ({
+  sendWebhookNotification: jest.fn().mockResolvedValue(undefined),
+  registerWebhook: jest.fn().mockResolvedValue({}),
+  getWebhook: jest.fn().mockResolvedValue(null),
+  getWebhooksForMerchant: jest.fn().mockResolvedValue([]),
+  updateWebhook: jest.fn().mockResolvedValue(null),
+  deleteWebhook: jest.fn().mockResolvedValue(false),
+  getWebhookStats: jest.fn().mockResolvedValue({ total: 0, byMerchant: {} }),
+  WebhookService: jest.fn(),
+  getWebhookService: jest.fn(),
+  setWebhookService: jest.fn(),
+  clearWebhookService: jest.fn(),
+}));
+
+// Mock the repository factory
+jest.unstable_mockModule('../../repositories/index', () => ({
+  getPaymentRepository: () => mockPaymentRepository,
+  getWebhookRepository: jest.fn(),
+  setPaymentRepository: jest.fn(),
+  setWebhookRepository: jest.fn(),
+  clearRepositories: jest.fn(),
+}));
+
 // Dynamic imports after mock setup
 const { default: paymentRoutes } = await import('../../routes/payment');
+const { clearPaymentService } = await import('../../services/payment');
 
 let app: Express;
 
@@ -41,6 +67,18 @@ beforeAll(() => {
   app = express();
   app.use(express.json());
   app.use('/api/v1/payments', paymentRoutes);
+});
+
+beforeEach(() => {
+  mockPaymentRepository = new MockPaymentRepository();
+  mockBsimClient.clear();
+  clearPaymentService();
+});
+
+afterEach(() => {
+  mockPaymentRepository.clear();
+  mockBsimClient.clear();
+  clearPaymentService();
 });
 
 describe('Payment Routes', () => {
@@ -165,9 +203,7 @@ describe('Payment Routes', () => {
       const transactionId = authResponse.body.transactionId;
 
       // Step 2: Capture
-      const captureResponse = await request(app)
-        .post(`/api/v1/payments/${transactionId}/capture`)
-        .send({});
+      const captureResponse = await request(app).post(`/api/v1/payments/${transactionId}/capture`).send({});
 
       expect(captureResponse.status).toBe(200);
       expect(captureResponse.body.status).toBe('captured');
@@ -255,14 +291,10 @@ describe('Payment Routes', () => {
       const transactionId = authResponse.body.transactionId;
 
       // Capture first
-      await request(app)
-        .post(`/api/v1/payments/${transactionId}/capture`)
-        .send({});
+      await request(app).post(`/api/v1/payments/${transactionId}/capture`).send({});
 
       // Try to void - should fail
-      const voidResponse = await request(app)
-        .post(`/api/v1/payments/${transactionId}/void`)
-        .send({});
+      const voidResponse = await request(app).post(`/api/v1/payments/${transactionId}/void`).send({});
 
       expect(voidResponse.status).toBe(400);
       expect(voidResponse.body.status).toBe('captured');
@@ -297,35 +329,28 @@ describe('Payment Routes', () => {
 
   describe('Error handling for non-existent transactions', () => {
     it('should return 400 for capture on non-existent transaction', async () => {
-      const response = await request(app)
-        .post('/api/v1/payments/non-existent-id/capture')
-        .send({});
+      const response = await request(app).post('/api/v1/payments/non-existent-id/capture').send({});
 
       expect(response.status).toBe(400);
       expect(response.body.status).toBe('failed');
     });
 
     it('should return 400 for void on non-existent transaction', async () => {
-      const response = await request(app)
-        .post('/api/v1/payments/non-existent-id/void')
-        .send({});
+      const response = await request(app).post('/api/v1/payments/non-existent-id/void').send({});
 
       expect(response.status).toBe(400);
       expect(response.body.status).toBe('failed');
     });
 
     it('should return 400 for refund on non-existent transaction', async () => {
-      const response = await request(app)
-        .post('/api/v1/payments/non-existent-id/refund')
-        .send({});
+      const response = await request(app).post('/api/v1/payments/non-existent-id/refund').send({});
 
       expect(response.status).toBe(400);
       expect(response.body.status).toBe('failed');
     });
 
     it('should return 404 for get on non-existent transaction', async () => {
-      const response = await request(app)
-        .get('/api/v1/payments/non-existent-id');
+      const response = await request(app).get('/api/v1/payments/non-existent-id');
 
       expect(response.status).toBe(404);
       expect(response.body.error).toBe('Transaction not found');
@@ -351,8 +376,7 @@ describe('Payment Routes', () => {
       const transactionId = authResponse.body.transactionId;
 
       // Get transaction
-      const response = await request(app)
-        .get(`/api/v1/payments/${transactionId}`);
+      const response = await request(app).get(`/api/v1/payments/${transactionId}`);
 
       expect(response.status).toBe(200);
       expect(response.body.id).toBe(transactionId);
@@ -381,9 +405,7 @@ describe('Payment Routes', () => {
       const transactionId = authResponse.body.transactionId;
 
       // Capture - must succeed
-      const captureResponse = await request(app)
-        .post(`/api/v1/payments/${transactionId}/capture`)
-        .send({});
+      const captureResponse = await request(app).post(`/api/v1/payments/${transactionId}/capture`).send({});
 
       expect(captureResponse.status).toBe(200);
       expect(captureResponse.body.status).toBe('captured');
@@ -425,35 +447,28 @@ describe('Payment Routes', () => {
 
     it('should return 500 for capture when service throws', async () => {
       // Test with edge case input
-      const response = await request(app)
-        .post('/api/v1/payments/undefined/capture')
-        .send({});
+      const response = await request(app).post('/api/v1/payments/undefined/capture').send({});
 
       expect([400, 500]).toContain(response.status);
     });
 
     it('should return 500 for void when service throws', async () => {
       // Test with edge case input
-      const response = await request(app)
-        .post('/api/v1/payments/undefined/void')
-        .send({});
+      const response = await request(app).post('/api/v1/payments/undefined/void').send({});
 
       expect([400, 500]).toContain(response.status);
     });
 
     it('should return 500 for refund when service throws', async () => {
       // Test with edge case input
-      const response = await request(app)
-        .post('/api/v1/payments/undefined/refund')
-        .send({});
+      const response = await request(app).post('/api/v1/payments/undefined/refund').send({});
 
       expect([400, 500]).toContain(response.status);
     });
 
     it('should return 500 for getTransaction when service throws', async () => {
       // Test with edge case input
-      const response = await request(app)
-        .get('/api/v1/payments/undefined');
+      const response = await request(app).get('/api/v1/payments/undefined');
 
       expect([404, 500]).toContain(response.status);
     });

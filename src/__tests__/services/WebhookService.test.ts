@@ -1,31 +1,35 @@
-import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { MockWebhookRepository } from '../mocks/MockWebhookRepository';
 
-// Mock the webhook queue before importing the service
+// Mock the webhook queue BEFORE importing any code that uses it
 jest.unstable_mockModule('../../queue/webhook-queue', () => ({
   enqueueWebhook: jest.fn().mockResolvedValue(undefined),
 }));
 
-// Dynamic import after mock setup
+// Dynamic imports after mock setup - MUST come after all mocks are set up
 const { enqueueWebhook } = await import('../../queue/webhook-queue');
-const {
-  registerWebhook,
-  getWebhook,
-  getWebhooksForMerchant,
-  updateWebhook,
-  deleteWebhook,
-  sendWebhookNotification,
-  getWebhookStats,
-} = await import('../../services/webhook');
+const { WebhookService, clearWebhookService } = await import('../../services/webhook');
 
 describe('WebhookService', () => {
+  let webhookService: InstanceType<typeof WebhookService>;
+  let mockRepository: MockWebhookRepository;
+
   beforeEach(() => {
     // Clear mocks
     jest.clearAllMocks();
+    // Create fresh instances
+    mockRepository = new MockWebhookRepository();
+    webhookService = new WebhookService(mockRepository);
+  });
+
+  afterEach(() => {
+    mockRepository.clear();
+    clearWebhookService();
   });
 
   describe('registerWebhook', () => {
-    it('should register a new webhook with generated secret', () => {
-      const webhook = registerWebhook({
+    it('should register a new webhook with generated secret', async () => {
+      const webhook = await webhookService.registerWebhook({
         merchantId: 'merchant-test-1',
         url: 'https://example.com/webhook',
         events: ['payment.authorized', 'payment.captured'],
@@ -42,9 +46,9 @@ describe('WebhookService', () => {
       expect(webhook.updatedAt).toBeInstanceOf(Date);
     });
 
-    it('should register a webhook with provided secret', () => {
+    it('should register a webhook with provided secret', async () => {
       const customSecret = 'my-custom-secret-key-12345';
-      const webhook = registerWebhook({
+      const webhook = await webhookService.registerWebhook({
         merchantId: 'merchant-test-2',
         url: 'https://example.com/webhook2',
         events: ['payment.refunded'],
@@ -54,14 +58,14 @@ describe('WebhookService', () => {
       expect(webhook.secret).toBe(customSecret);
     });
 
-    it('should register multiple webhooks for the same merchant', () => {
-      const webhook1 = registerWebhook({
+    it('should register multiple webhooks for the same merchant', async () => {
+      const webhook1 = await webhookService.registerWebhook({
         merchantId: 'merchant-multi',
         url: 'https://example.com/webhook1',
         events: ['payment.authorized'],
       });
 
-      const webhook2 = registerWebhook({
+      const webhook2 = await webhookService.registerWebhook({
         merchantId: 'merchant-multi',
         url: 'https://example.com/webhook2',
         events: ['payment.captured'],
@@ -69,83 +73,83 @@ describe('WebhookService', () => {
 
       expect(webhook1.id).not.toBe(webhook2.id);
 
-      const merchantWebhooks = getWebhooksForMerchant('merchant-multi');
+      const merchantWebhooks = await webhookService.getWebhooksForMerchant('merchant-multi');
       expect(merchantWebhooks.length).toBe(2);
     });
   });
 
   describe('getWebhook', () => {
-    it('should return webhook by ID', () => {
-      const created = registerWebhook({
+    it('should return webhook by ID', async () => {
+      const created = await webhookService.registerWebhook({
         merchantId: 'merchant-get-test',
         url: 'https://example.com/get-test',
         events: ['payment.voided'],
       });
 
-      const retrieved = getWebhook(created.id);
+      const retrieved = await webhookService.getWebhook(created.id);
 
       expect(retrieved).toBeDefined();
       expect(retrieved?.id).toBe(created.id);
       expect(retrieved?.merchantId).toBe('merchant-get-test');
     });
 
-    it('should return undefined for non-existent webhook', () => {
-      const result = getWebhook('non-existent-id');
-      expect(result).toBeUndefined();
+    it('should return null for non-existent webhook', async () => {
+      const result = await webhookService.getWebhook('non-existent-id');
+      expect(result).toBeNull();
     });
   });
 
   describe('getWebhooksForMerchant', () => {
-    it('should return all active webhooks for a merchant', () => {
+    it('should return all active webhooks for a merchant', async () => {
       const merchantId = 'merchant-list-test-' + Date.now();
 
-      registerWebhook({
+      await webhookService.registerWebhook({
         merchantId,
         url: 'https://example.com/list1',
         events: ['payment.authorized'],
       });
 
-      registerWebhook({
+      await webhookService.registerWebhook({
         merchantId,
         url: 'https://example.com/list2',
         events: ['payment.captured'],
       });
 
-      const webhooks = getWebhooksForMerchant(merchantId);
+      const webhooks = await webhookService.getWebhooksForMerchant(merchantId);
       expect(webhooks.length).toBe(2);
     });
 
-    it('should return empty array for merchant with no webhooks', () => {
-      const webhooks = getWebhooksForMerchant('non-existent-merchant');
+    it('should return empty array for merchant with no webhooks', async () => {
+      const webhooks = await webhookService.getWebhooksForMerchant('non-existent-merchant');
       expect(webhooks).toEqual([]);
     });
 
-    it('should not return inactive webhooks', () => {
+    it('should not return inactive webhooks', async () => {
       const merchantId = 'merchant-inactive-test-' + Date.now();
 
-      const webhook = registerWebhook({
+      const webhook = await webhookService.registerWebhook({
         merchantId,
         url: 'https://example.com/inactive',
         events: ['payment.authorized'],
       });
 
       // Deactivate the webhook
-      updateWebhook(webhook.id, { isActive: false });
+      await webhookService.updateWebhook(webhook.id, { isActive: false });
 
-      const webhooks = getWebhooksForMerchant(merchantId);
+      const webhooks = await webhookService.getWebhooksForMerchant(merchantId);
       expect(webhooks.length).toBe(0);
     });
   });
 
   describe('updateWebhook', () => {
-    it('should update webhook URL', () => {
-      const webhook = registerWebhook({
+    it('should update webhook URL', async () => {
+      const webhook = await webhookService.registerWebhook({
         merchantId: 'merchant-update-test',
         url: 'https://old-url.com/webhook',
         events: ['payment.authorized'],
       });
 
-      const updated = updateWebhook(webhook.id, {
+      const updated = await webhookService.updateWebhook(webhook.id, {
         url: 'https://new-url.com/webhook',
       });
 
@@ -153,22 +157,22 @@ describe('WebhookService', () => {
       expect(updated?.updatedAt.getTime()).toBeGreaterThanOrEqual(webhook.createdAt.getTime());
     });
 
-    it('should update webhook events', () => {
-      const webhook = registerWebhook({
+    it('should update webhook events', async () => {
+      const webhook = await webhookService.registerWebhook({
         merchantId: 'merchant-update-events',
         url: 'https://example.com/webhook',
         events: ['payment.authorized'],
       });
 
-      const updated = updateWebhook(webhook.id, {
+      const updated = await webhookService.updateWebhook(webhook.id, {
         events: ['payment.authorized', 'payment.captured', 'payment.refunded'],
       });
 
       expect(updated?.events).toEqual(['payment.authorized', 'payment.captured', 'payment.refunded']);
     });
 
-    it('should update webhook active status', () => {
-      const webhook = registerWebhook({
+    it('should update webhook active status', async () => {
+      const webhook = await webhookService.registerWebhook({
         merchantId: 'merchant-update-active',
         url: 'https://example.com/webhook',
         events: ['payment.authorized'],
@@ -176,50 +180,50 @@ describe('WebhookService', () => {
 
       expect(webhook.isActive).toBe(true);
 
-      const updated = updateWebhook(webhook.id, { isActive: false });
+      const updated = await webhookService.updateWebhook(webhook.id, { isActive: false });
       expect(updated?.isActive).toBe(false);
     });
 
-    it('should return undefined for non-existent webhook', () => {
-      const result = updateWebhook('non-existent-id', { url: 'https://new.com' });
-      expect(result).toBeUndefined();
+    it('should return null for non-existent webhook', async () => {
+      const result = await webhookService.updateWebhook('non-existent-id', { url: 'https://new.com' });
+      expect(result).toBeNull();
     });
   });
 
   describe('deleteWebhook', () => {
-    it('should delete existing webhook', () => {
-      const webhook = registerWebhook({
+    it('should delete existing webhook', async () => {
+      const webhook = await webhookService.registerWebhook({
         merchantId: 'merchant-delete-test',
         url: 'https://example.com/delete',
         events: ['payment.authorized'],
       });
 
-      const result = deleteWebhook(webhook.id);
+      const result = await webhookService.deleteWebhook(webhook.id);
       expect(result).toBe(true);
 
-      const retrieved = getWebhook(webhook.id);
-      expect(retrieved).toBeUndefined();
+      const retrieved = await webhookService.getWebhook(webhook.id);
+      expect(retrieved).toBeNull();
     });
 
-    it('should return false for non-existent webhook', () => {
-      const result = deleteWebhook('non-existent-id');
+    it('should return false for non-existent webhook', async () => {
+      const result = await webhookService.deleteWebhook('non-existent-id');
       expect(result).toBe(false);
     });
 
-    it('should remove webhook from merchant index', () => {
+    it('should remove webhook from merchant index', async () => {
       const merchantId = 'merchant-delete-index-' + Date.now();
 
-      const webhook = registerWebhook({
+      const webhook = await webhookService.registerWebhook({
         merchantId,
         url: 'https://example.com/delete-index',
         events: ['payment.authorized'],
       });
 
-      expect(getWebhooksForMerchant(merchantId).length).toBe(1);
+      expect((await webhookService.getWebhooksForMerchant(merchantId)).length).toBe(1);
 
-      deleteWebhook(webhook.id);
+      await webhookService.deleteWebhook(webhook.id);
 
-      expect(getWebhooksForMerchant(merchantId).length).toBe(0);
+      expect((await webhookService.getWebhooksForMerchant(merchantId)).length).toBe(0);
     });
   });
 
@@ -227,13 +231,13 @@ describe('WebhookService', () => {
     it('should enqueue webhook for subscribed events', async () => {
       const merchantId = 'merchant-notify-' + Date.now();
 
-      registerWebhook({
+      await webhookService.registerWebhook({
         merchantId,
         url: 'https://example.com/notify',
         events: ['payment.authorized', 'payment.captured'],
       });
 
-      await sendWebhookNotification('payment.authorized', {
+      await webhookService.sendWebhookNotification('payment.authorized', {
         transactionId: 'txn-123',
         merchantId,
         orderId: 'order-123',
@@ -248,7 +252,7 @@ describe('WebhookService', () => {
     it('should not enqueue for unsubscribed events', async () => {
       const merchantId = 'merchant-no-notify-' + Date.now();
 
-      registerWebhook({
+      await webhookService.registerWebhook({
         merchantId,
         url: 'https://example.com/notify',
         events: ['payment.captured'], // Only subscribed to captured
@@ -256,7 +260,8 @@ describe('WebhookService', () => {
 
       (enqueueWebhook as jest.Mock).mockClear();
 
-      await sendWebhookNotification('payment.authorized', { // Sending authorized event
+      await webhookService.sendWebhookNotification('payment.authorized', {
+        // Sending authorized event
         transactionId: 'txn-456',
         merchantId,
         orderId: 'order-456',
@@ -271,7 +276,7 @@ describe('WebhookService', () => {
     it('should not enqueue when no webhooks registered', async () => {
       (enqueueWebhook as jest.Mock).mockClear();
 
-      await sendWebhookNotification('payment.authorized', {
+      await webhookService.sendWebhookNotification('payment.authorized', {
         transactionId: 'txn-789',
         merchantId: 'merchant-no-webhooks',
         orderId: 'order-789',
@@ -286,13 +291,13 @@ describe('WebhookService', () => {
     it('should enqueue to multiple webhooks for same merchant', async () => {
       const merchantId = 'merchant-multi-notify-' + Date.now();
 
-      registerWebhook({
+      await webhookService.registerWebhook({
         merchantId,
         url: 'https://example.com/webhook1',
         events: ['payment.authorized'],
       });
 
-      registerWebhook({
+      await webhookService.registerWebhook({
         merchantId,
         url: 'https://example.com/webhook2',
         events: ['payment.authorized'],
@@ -300,7 +305,7 @@ describe('WebhookService', () => {
 
       (enqueueWebhook as jest.Mock).mockClear();
 
-      await sendWebhookNotification('payment.authorized', {
+      await webhookService.sendWebhookNotification('payment.authorized', {
         transactionId: 'txn-multi',
         merchantId,
         orderId: 'order-multi',
@@ -314,8 +319,8 @@ describe('WebhookService', () => {
   });
 
   describe('getWebhookStats', () => {
-    it('should return webhook statistics', () => {
-      const stats = getWebhookStats();
+    it('should return webhook statistics', async () => {
+      const stats = await webhookService.getWebhookStats();
 
       expect(stats).toHaveProperty('total');
       expect(stats).toHaveProperty('byMerchant');

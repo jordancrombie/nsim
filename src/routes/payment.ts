@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { PaymentService } from '../services/payment.js';
+import { getPaymentService } from '../services/payment.js';
 import {
   PaymentAuthorizationRequest,
   PaymentCaptureRequest,
@@ -8,7 +8,6 @@ import {
 } from '../types/payment.js';
 
 const router = Router();
-const paymentService = new PaymentService();
 
 /**
  * POST /api/v1/payments/authorize
@@ -26,7 +25,7 @@ router.post('/authorize', async (req: Request, res: Response) => {
       });
     }
 
-    const response = await paymentService.authorize(request);
+    const response = await getPaymentService().authorize(request);
     res.status(response.status === 'authorized' ? 200 : 400).json(response);
   } catch (error) {
     console.error('Authorization error:', error);
@@ -45,7 +44,7 @@ router.post('/:transactionId/capture', async (req: Request, res: Response) => {
       amount: req.body.amount,
     };
 
-    const response = await paymentService.capture(request);
+    const response = await getPaymentService().capture(request);
     res.status(response.status === 'captured' ? 200 : 400).json(response);
   } catch (error) {
     console.error('Capture error:', error);
@@ -64,7 +63,7 @@ router.post('/:transactionId/void', async (req: Request, res: Response) => {
       reason: req.body.reason,
     };
 
-    const response = await paymentService.void(request);
+    const response = await getPaymentService().void(request);
     res.status(response.status === 'voided' ? 200 : 400).json(response);
   } catch (error) {
     console.error('Void error:', error);
@@ -84,7 +83,7 @@ router.post('/:transactionId/refund', async (req: Request, res: Response) => {
       reason: req.body.reason,
     };
 
-    const response = await paymentService.refund(request);
+    const response = await getPaymentService().refund(request);
     // Return 200 for successful refunds (both partial and full)
     // Partial refunds keep status as 'captured', full refunds change to 'refunded'
     const isSuccess = response.status === 'refunded' || response.status === 'captured';
@@ -101,7 +100,7 @@ router.post('/:transactionId/refund', async (req: Request, res: Response) => {
  */
 router.get('/:transactionId', async (req: Request, res: Response) => {
   try {
-    const transaction = await paymentService.getTransaction(req.params.transactionId);
+    const transaction = await getPaymentService().getTransaction(req.params.transactionId);
     if (!transaction) {
       return res.status(404).json({ error: 'Transaction not found' });
     }

@@ -10,11 +10,11 @@ import {
   PaymentRefundRequest,
   PaymentRefundResponse,
   PaymentTransaction,
-  PaymentStatus,
 } from '../types/payment.js';
 import { BsimClient } from './bsim-client.js';
 import { bsimRegistry } from './bsim-registry.js';
 import { sendWebhookNotification } from './webhook.js';
+import { PaymentRepository, getPaymentRepository } from '../repositories/index.js';
 
 /**
  * Token analysis utilities for debugging wallet payment flow
@@ -97,16 +97,17 @@ export function analyzeCardToken(cardToken: string): TokenAnalysis {
   return analysis;
 }
 
-/**
- * In-memory transaction store (will be replaced with PostgreSQL)
- */
-const transactions = new Map<string, PaymentTransaction>();
-
 export class PaymentService {
   /** Cache of BSIM clients by bsimId for multi-bank routing */
   private bsimClients: Map<string, BsimClient> = new Map();
 
-  constructor() {
+  /** Repository for persisting transactions */
+  private repository: PaymentRepository;
+
+  constructor(repository?: PaymentRepository) {
+    // Use provided repository or get default
+    this.repository = repository ?? getPaymentRepository();
+
     // Pre-initialize clients for all configured providers
     for (const provider of bsimRegistry.listProviders()) {
       this.bsimClients.set(provider.bsimId, new BsimClient(provider));
@@ -179,7 +180,7 @@ export class PaymentService {
     });
 
     // Create transaction record with bsimId for later operations
-    const transaction: PaymentTransaction = {
+    let transaction: PaymentTransaction = {
       id: transactionId,
       merchantId: request.merchantId,
       merchantName: request.merchantName,
@@ -260,7 +261,9 @@ export class PaymentService {
     }
 
     transaction.updatedAt = new Date();
-    transactions.set(transactionId, transaction);
+
+    // Persist transaction to database
+    transaction = await this.repository.create(transaction);
 
     // Send webhook notification
     const webhookEvent =
@@ -291,7 +294,7 @@ export class PaymentService {
   }
 
   async capture(request: PaymentCaptureRequest): Promise<PaymentCaptureResponse> {
-    const transaction = transactions.get(request.transactionId);
+    const transaction = await this.repository.findById(request.transactionId);
 
     if (!transaction) {
       return {
@@ -316,6 +319,8 @@ export class PaymentService {
     // Get the correct BSIM client based on transaction's bsimId
     const bsimClient = this.getBsimClient(transaction.bsimId || null);
 
+    let updatedTransaction: PaymentTransaction;
+
     // Call BSIM to capture
     try {
       const bsimResponse = await bsimClient.capture({
@@ -324,44 +329,47 @@ export class PaymentService {
       });
 
       if (bsimResponse.success) {
-        transaction.status = 'captured';
-        transaction.capturedAmount = captureAmount;
+        updatedTransaction = await this.repository.update(request.transactionId, {
+          status: 'captured',
+          capturedAmount: captureAmount,
+        });
       } else {
-        transaction.status = 'failed';
-        transaction.declineReason = bsimResponse.error;
+        updatedTransaction = await this.repository.update(request.transactionId, {
+          status: 'failed',
+          declineReason: bsimResponse.error,
+        });
       }
     } catch (error) {
       console.error('BSIM capture failed:', error);
-      transaction.status = 'failed';
-      transaction.declineReason = 'Network error';
+      updatedTransaction = await this.repository.update(request.transactionId, {
+        status: 'failed',
+        declineReason: 'Network error',
+      });
     }
 
-    transaction.updatedAt = new Date();
-    transactions.set(request.transactionId, transaction);
-
     // Send webhook notification
-    if (transaction.status === 'captured') {
+    if (updatedTransaction.status === 'captured') {
       sendWebhookNotification('payment.captured', {
         transactionId: request.transactionId,
-        merchantId: transaction.merchantId,
-        orderId: transaction.orderId,
-        amount: transaction.capturedAmount,
-        currency: transaction.currency,
-        status: transaction.status,
-        authorizationCode: transaction.authorizationCode,
+        merchantId: updatedTransaction.merchantId,
+        orderId: updatedTransaction.orderId,
+        amount: updatedTransaction.capturedAmount,
+        currency: updatedTransaction.currency,
+        status: updatedTransaction.status,
+        authorizationCode: updatedTransaction.authorizationCode,
       }).catch((err) => console.error('[PaymentService] Webhook notification error:', err));
     }
 
     return {
       transactionId: request.transactionId,
-      status: transaction.status,
-      capturedAmount: transaction.capturedAmount,
-      timestamp: transaction.updatedAt.toISOString(),
+      status: updatedTransaction.status,
+      capturedAmount: updatedTransaction.capturedAmount,
+      timestamp: updatedTransaction.updatedAt.toISOString(),
     };
   }
 
   async void(request: PaymentVoidRequest): Promise<PaymentVoidResponse> {
-    const transaction = transactions.get(request.transactionId);
+    const transaction = await this.repository.findById(request.transactionId);
 
     if (!transaction) {
       return {
@@ -382,6 +390,8 @@ export class PaymentService {
     // Get the correct BSIM client based on transaction's bsimId
     const bsimClient = this.getBsimClient(transaction.bsimId || null);
 
+    let updatedTransaction: PaymentTransaction;
+
     // Call BSIM to void
     try {
       const bsimResponse = await bsimClient.void({
@@ -389,41 +399,44 @@ export class PaymentService {
       });
 
       if (bsimResponse.success) {
-        transaction.status = 'voided';
+        updatedTransaction = await this.repository.update(request.transactionId, {
+          status: 'voided',
+        });
       } else {
-        transaction.status = 'failed';
-        transaction.declineReason = bsimResponse.error;
+        updatedTransaction = await this.repository.update(request.transactionId, {
+          status: 'failed',
+          declineReason: bsimResponse.error,
+        });
       }
     } catch (error) {
       console.error('BSIM void failed:', error);
-      transaction.status = 'failed';
-      transaction.declineReason = 'Network error';
+      updatedTransaction = await this.repository.update(request.transactionId, {
+        status: 'failed',
+        declineReason: 'Network error',
+      });
     }
 
-    transaction.updatedAt = new Date();
-    transactions.set(request.transactionId, transaction);
-
     // Send webhook notification
-    if (transaction.status === 'voided') {
+    if (updatedTransaction.status === 'voided') {
       sendWebhookNotification('payment.voided', {
         transactionId: request.transactionId,
-        merchantId: transaction.merchantId,
-        orderId: transaction.orderId,
-        amount: transaction.amount,
-        currency: transaction.currency,
-        status: transaction.status,
+        merchantId: updatedTransaction.merchantId,
+        orderId: updatedTransaction.orderId,
+        amount: updatedTransaction.amount,
+        currency: updatedTransaction.currency,
+        status: updatedTransaction.status,
       }).catch((err) => console.error('[PaymentService] Webhook notification error:', err));
     }
 
     return {
       transactionId: request.transactionId,
-      status: transaction.status,
-      timestamp: transaction.updatedAt.toISOString(),
+      status: updatedTransaction.status,
+      timestamp: updatedTransaction.updatedAt.toISOString(),
     };
   }
 
   async refund(request: PaymentRefundRequest): Promise<PaymentRefundResponse> {
-    const transaction = transactions.get(request.transactionId);
+    const transaction = await this.repository.findById(request.transactionId);
     const refundId = randomUUID();
 
     if (!transaction) {
@@ -459,10 +472,33 @@ export class PaymentService {
       });
 
       if (bsimResponse.success) {
-        transaction.refundedAmount += refundAmount;
-        if (transaction.refundedAmount >= transaction.capturedAmount) {
-          transaction.status = 'refunded';
-        }
+        const newRefundedAmount = transaction.refundedAmount + refundAmount;
+        const newStatus = newRefundedAmount >= transaction.capturedAmount ? 'refunded' : transaction.status;
+
+        const updatedTransaction = await this.repository.update(request.transactionId, {
+          status: newStatus,
+          refundedAmount: newRefundedAmount,
+        });
+
+        // Send webhook notification for refund
+        sendWebhookNotification('payment.refunded', {
+          transactionId: request.transactionId,
+          merchantId: updatedTransaction.merchantId,
+          orderId: updatedTransaction.orderId,
+          amount: refundAmount,
+          currency: updatedTransaction.currency,
+          status: updatedTransaction.status,
+          refundId,
+          refundedAmount: updatedTransaction.refundedAmount,
+        }).catch((err) => console.error('[PaymentService] Webhook notification error:', err));
+
+        return {
+          transactionId: request.transactionId,
+          refundId,
+          status: updatedTransaction.status,
+          refundedAmount: updatedTransaction.refundedAmount,
+          timestamp: updatedTransaction.updatedAt.toISOString(),
+        };
       } else {
         return {
           transactionId: request.transactionId,
@@ -482,60 +518,24 @@ export class PaymentService {
         timestamp: new Date().toISOString(),
       };
     }
-
-    transaction.updatedAt = new Date();
-    transactions.set(request.transactionId, transaction);
-
-    // Send webhook notification for refund
-    sendWebhookNotification('payment.refunded', {
-      transactionId: request.transactionId,
-      merchantId: transaction.merchantId,
-      orderId: transaction.orderId,
-      amount: refundAmount,
-      currency: transaction.currency,
-      status: transaction.status,
-      refundId,
-      refundedAmount: transaction.refundedAmount,
-    }).catch((err) => console.error('[PaymentService] Webhook notification error:', err));
-
-    return {
-      transactionId: request.transactionId,
-      refundId,
-      status: transaction.status,
-      refundedAmount: transaction.refundedAmount,
-      timestamp: transaction.updatedAt.toISOString(),
-    };
   }
 
   async getTransaction(transactionId: string): Promise<PaymentTransaction | null> {
-    return transactions.get(transactionId) ?? null;
+    return this.repository.findById(transactionId);
   }
 
   /**
    * Get all expired authorizations that need to be voided
    */
   async getExpiredAuthorizations(): Promise<PaymentTransaction[]> {
-    const now = new Date();
-    const expired: PaymentTransaction[] = [];
-
-    for (const transaction of transactions.values()) {
-      if (
-        transaction.status === 'authorized' &&
-        transaction.expiresAt &&
-        transaction.expiresAt <= now
-      ) {
-        expired.push(transaction);
-      }
-    }
-
-    return expired;
+    return this.repository.findExpiredAuthorizations();
   }
 
   /**
    * Expire an authorization - void it and send webhook
    */
   async expireAuthorization(transactionId: string): Promise<void> {
-    const transaction = transactions.get(transactionId);
+    const transaction = await this.repository.findById(transactionId);
 
     if (!transaction || transaction.status !== 'authorized') {
       return;
@@ -555,19 +555,46 @@ export class PaymentService {
       console.warn(`[PaymentService] Failed to void expired auth with BSIM: ${error}`);
     }
 
-    // Mark as expired locally
-    transaction.status = 'expired';
-    transaction.updatedAt = new Date();
-    transactions.set(transactionId, transaction);
+    // Mark as expired in database
+    const updatedTransaction = await this.repository.update(transactionId, {
+      status: 'expired',
+    });
 
     // Send webhook notification
     sendWebhookNotification('payment.expired', {
       transactionId,
-      merchantId: transaction.merchantId,
-      orderId: transaction.orderId,
-      amount: transaction.amount,
-      currency: transaction.currency,
-      status: transaction.status,
+      merchantId: updatedTransaction.merchantId,
+      orderId: updatedTransaction.orderId,
+      amount: updatedTransaction.amount,
+      currency: updatedTransaction.currency,
+      status: updatedTransaction.status,
     }).catch((err) => console.error('[PaymentService] Webhook notification error:', err));
   }
+}
+
+// Default service instance
+let paymentServiceInstance: PaymentService | null = null;
+
+/**
+ * Get the default payment service instance
+ */
+export function getPaymentService(): PaymentService {
+  if (!paymentServiceInstance) {
+    paymentServiceInstance = new PaymentService();
+  }
+  return paymentServiceInstance;
+}
+
+/**
+ * Set custom payment service (for testing)
+ */
+export function setPaymentService(service: PaymentService): void {
+  paymentServiceInstance = service;
+}
+
+/**
+ * Clear payment service singleton (for testing)
+ */
+export function clearPaymentService(): void {
+  paymentServiceInstance = null;
 }

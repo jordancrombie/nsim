@@ -1,14 +1,28 @@
-import { jest, describe, it, expect, beforeAll, beforeEach } from '@jest/globals';
+import { jest, describe, it, expect, beforeAll, beforeEach, afterEach } from '@jest/globals';
 import express, { Express } from 'express';
 import request from 'supertest';
+import { MockWebhookRepository } from '../mocks/MockWebhookRepository';
 
 // Mock the webhook queue
 jest.unstable_mockModule('../../queue/webhook-queue', () => ({
   enqueueWebhook: jest.fn().mockResolvedValue(undefined),
 }));
 
+// Create a shared mock repository
+let mockRepository: MockWebhookRepository;
+
+// Mock the repository factory
+jest.unstable_mockModule('../../repositories/index', () => ({
+  getWebhookRepository: () => mockRepository,
+  getPaymentRepository: jest.fn(),
+  setWebhookRepository: jest.fn(),
+  setPaymentRepository: jest.fn(),
+  clearRepositories: jest.fn(),
+}));
+
 // Dynamic imports after mock setup
 const { default: webhookRoutes } = await import('../../routes/webhook');
+const { clearWebhookService } = await import('../../services/webhook');
 
 let app: Express;
 
@@ -16,6 +30,16 @@ beforeAll(() => {
   app = express();
   app.use(express.json());
   app.use('/api/v1/webhooks', webhookRoutes);
+});
+
+beforeEach(() => {
+  mockRepository = new MockWebhookRepository();
+  clearWebhookService();
+});
+
+afterEach(() => {
+  mockRepository.clear();
+  clearWebhookService();
 });
 
 describe('Webhook Routes', () => {
@@ -129,8 +153,7 @@ describe('Webhook Routes', () => {
       const webhookId = createResponse.body.id;
 
       // Then get it
-      const response = await request(app)
-        .get(`/api/v1/webhooks/${webhookId}`);
+      const response = await request(app).get(`/api/v1/webhooks/${webhookId}`);
 
       expect(response.status).toBe(200);
       expect(response.body.id).toBe(webhookId);
@@ -140,8 +163,7 @@ describe('Webhook Routes', () => {
     });
 
     it('should return 404 for non-existent webhook', async () => {
-      const response = await request(app)
-        .get('/api/v1/webhooks/non-existent-id');
+      const response = await request(app).get('/api/v1/webhooks/non-existent-id');
 
       expect(response.status).toBe(404);
       expect(response.body.error).toBe('Webhook not found');
@@ -153,24 +175,19 @@ describe('Webhook Routes', () => {
       const merchantId = 'merchant-list-' + Date.now();
 
       // Create two webhooks
-      await request(app)
-        .post('/api/v1/webhooks')
-        .send({
-          merchantId,
-          url: 'https://example.com/webhook1',
-          events: ['payment.authorized'],
-        });
+      await request(app).post('/api/v1/webhooks').send({
+        merchantId,
+        url: 'https://example.com/webhook1',
+        events: ['payment.authorized'],
+      });
 
-      await request(app)
-        .post('/api/v1/webhooks')
-        .send({
-          merchantId,
-          url: 'https://example.com/webhook2',
-          events: ['payment.captured'],
-        });
+      await request(app).post('/api/v1/webhooks').send({
+        merchantId,
+        url: 'https://example.com/webhook2',
+        events: ['payment.captured'],
+      });
 
-      const response = await request(app)
-        .get(`/api/v1/webhooks/merchant/${merchantId}`);
+      const response = await request(app).get(`/api/v1/webhooks/merchant/${merchantId}`);
 
       expect(response.status).toBe(200);
       expect(response.body.merchantId).toBe(merchantId);
@@ -178,8 +195,7 @@ describe('Webhook Routes', () => {
     });
 
     it('should return empty array for merchant with no webhooks', async () => {
-      const response = await request(app)
-        .get('/api/v1/webhooks/merchant/no-webhooks-merchant');
+      const response = await request(app).get('/api/v1/webhooks/merchant/no-webhooks-merchant');
 
       expect(response.status).toBe(200);
       expect(response.body.webhooks).toEqual([]);
@@ -189,13 +205,11 @@ describe('Webhook Routes', () => {
   describe('PATCH /api/v1/webhooks/:id', () => {
     it('should update webhook URL', async () => {
       // Create webhook
-      const createResponse = await request(app)
-        .post('/api/v1/webhooks')
-        .send({
-          merchantId: 'merchant-patch-test',
-          url: 'https://old-url.com/webhook',
-          events: ['payment.authorized'],
-        });
+      const createResponse = await request(app).post('/api/v1/webhooks').send({
+        merchantId: 'merchant-patch-test',
+        url: 'https://old-url.com/webhook',
+        events: ['payment.authorized'],
+      });
 
       const webhookId = createResponse.body.id;
 
@@ -209,13 +223,11 @@ describe('Webhook Routes', () => {
     });
 
     it('should update webhook events', async () => {
-      const createResponse = await request(app)
-        .post('/api/v1/webhooks')
-        .send({
-          merchantId: 'merchant-patch-events',
-          url: 'https://example.com/webhook',
-          events: ['payment.authorized'],
-        });
+      const createResponse = await request(app).post('/api/v1/webhooks').send({
+        merchantId: 'merchant-patch-events',
+        url: 'https://example.com/webhook',
+        events: ['payment.authorized'],
+      });
 
       const webhookId = createResponse.body.id;
 
@@ -228,13 +240,11 @@ describe('Webhook Routes', () => {
     });
 
     it('should update webhook active status', async () => {
-      const createResponse = await request(app)
-        .post('/api/v1/webhooks')
-        .send({
-          merchantId: 'merchant-patch-active',
-          url: 'https://example.com/webhook',
-          events: ['payment.authorized'],
-        });
+      const createResponse = await request(app).post('/api/v1/webhooks').send({
+        merchantId: 'merchant-patch-active',
+        url: 'https://example.com/webhook',
+        events: ['payment.authorized'],
+      });
 
       const webhookId = createResponse.body.id;
 
@@ -247,13 +257,11 @@ describe('Webhook Routes', () => {
     });
 
     it('should return 400 for invalid URL', async () => {
-      const createResponse = await request(app)
-        .post('/api/v1/webhooks')
-        .send({
-          merchantId: 'merchant-patch-invalid',
-          url: 'https://example.com/webhook',
-          events: ['payment.authorized'],
-        });
+      const createResponse = await request(app).post('/api/v1/webhooks').send({
+        merchantId: 'merchant-patch-invalid',
+        url: 'https://example.com/webhook',
+        events: ['payment.authorized'],
+      });
 
       const response = await request(app)
         .patch(`/api/v1/webhooks/${createResponse.body.id}`)
@@ -264,13 +272,11 @@ describe('Webhook Routes', () => {
     });
 
     it('should return 400 for empty events array', async () => {
-      const createResponse = await request(app)
-        .post('/api/v1/webhooks')
-        .send({
-          merchantId: 'merchant-patch-empty-events',
-          url: 'https://example.com/webhook',
-          events: ['payment.authorized'],
-        });
+      const createResponse = await request(app).post('/api/v1/webhooks').send({
+        merchantId: 'merchant-patch-empty-events',
+        url: 'https://example.com/webhook',
+        events: ['payment.authorized'],
+      });
 
       const response = await request(app)
         .patch(`/api/v1/webhooks/${createResponse.body.id}`)
@@ -281,13 +287,11 @@ describe('Webhook Routes', () => {
     });
 
     it('should return 400 for invalid event types', async () => {
-      const createResponse = await request(app)
-        .post('/api/v1/webhooks')
-        .send({
-          merchantId: 'merchant-patch-invalid-events',
-          url: 'https://example.com/webhook',
-          events: ['payment.authorized'],
-        });
+      const createResponse = await request(app).post('/api/v1/webhooks').send({
+        merchantId: 'merchant-patch-invalid-events',
+        url: 'https://example.com/webhook',
+        events: ['payment.authorized'],
+      });
 
       const response = await request(app)
         .patch(`/api/v1/webhooks/${createResponse.body.id}`)
@@ -309,31 +313,26 @@ describe('Webhook Routes', () => {
 
   describe('DELETE /api/v1/webhooks/:id', () => {
     it('should delete webhook', async () => {
-      const createResponse = await request(app)
-        .post('/api/v1/webhooks')
-        .send({
-          merchantId: 'merchant-delete-test',
-          url: 'https://example.com/delete',
-          events: ['payment.authorized'],
-        });
+      const createResponse = await request(app).post('/api/v1/webhooks').send({
+        merchantId: 'merchant-delete-test',
+        url: 'https://example.com/delete',
+        events: ['payment.authorized'],
+      });
 
       const webhookId = createResponse.body.id;
 
-      const response = await request(app)
-        .delete(`/api/v1/webhooks/${webhookId}`);
+      const response = await request(app).delete(`/api/v1/webhooks/${webhookId}`);
 
       expect(response.status).toBe(204);
 
       // Verify it's gone
-      const getResponse = await request(app)
-        .get(`/api/v1/webhooks/${webhookId}`);
+      const getResponse = await request(app).get(`/api/v1/webhooks/${webhookId}`);
 
       expect(getResponse.status).toBe(404);
     });
 
     it('should return 404 for non-existent webhook', async () => {
-      const response = await request(app)
-        .delete('/api/v1/webhooks/non-existent-id');
+      const response = await request(app).delete('/api/v1/webhooks/non-existent-id');
 
       expect(response.status).toBe(404);
       expect(response.body.error).toBe('Webhook not found');
@@ -342,8 +341,7 @@ describe('Webhook Routes', () => {
 
   describe('GET /api/v1/webhooks/admin/stats', () => {
     it('should return webhook statistics', async () => {
-      const response = await request(app)
-        .get('/api/v1/webhooks/admin/stats');
+      const response = await request(app).get('/api/v1/webhooks/admin/stats');
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('total');
@@ -353,8 +351,7 @@ describe('Webhook Routes', () => {
 
   describe('GET /api/v1/webhooks/events/list', () => {
     it('should return valid event types', async () => {
-      const response = await request(app)
-        .get('/api/v1/webhooks/events/list');
+      const response = await request(app).get('/api/v1/webhooks/events/list');
 
       expect(response.status).toBe(200);
       expect(response.body.events).toContain('payment.authorized');
