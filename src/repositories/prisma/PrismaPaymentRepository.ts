@@ -26,7 +26,7 @@ function toPrismaStatus(status: PaymentStatus): PrismaPaymentStatus {
 function toDomainTransaction(prismaTransaction: {
   id: string;
   merchantId: string;
-  merchantName: string;
+  merchantName: string | null;
   orderId: string;
   cardToken: string;
   amount: { toNumber(): number } | number;
@@ -46,7 +46,7 @@ function toDomainTransaction(prismaTransaction: {
   return {
     id: prismaTransaction.id,
     merchantId: prismaTransaction.merchantId,
-    merchantName: prismaTransaction.merchantName,
+    merchantName: prismaTransaction.merchantName ?? prismaTransaction.merchantId,
     orderId: prismaTransaction.orderId,
     cardToken: prismaTransaction.cardToken,
     amount: typeof prismaTransaction.amount === 'number'
@@ -79,7 +79,7 @@ export class PrismaPaymentRepository implements PaymentRepository {
       data: {
         id: transaction.id,
         merchantId: transaction.merchantId,
-        merchantName: transaction.merchantName,
+        merchantName: transaction.merchantName || transaction.merchantId,
         orderId: transaction.orderId,
         cardToken: transaction.cardToken,
         amount: transaction.amount,

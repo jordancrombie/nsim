@@ -30,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - OpenAPI spec updated to v1.1.0 with multi-bank documentation
   - 181 tests passing (11 new routing tests)
 
+### Fixed
+
+- **Critical: merchantName field causing transaction save failure** (2025-12-25)
+  - Transactions were authorized by BSIM but failed to persist to database
+  - Root cause: `merchantName` was required but SSIMs don't send it
+  - Fix: Made `merchantName` optional with automatic fallback to `merchantId`
+  - Affected: Transactions approved but webhooks not sent, causing "order not found" errors
+
 ### Changed
 
 - **E2E Test Suite Moved to WSIM** - The Playwright E2E tests were moved to the WSIM repository for centralized cross-service testing. NSIM retains 181 unit tests with ~85% coverage.

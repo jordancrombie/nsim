@@ -46,7 +46,7 @@ enum WebhookEventType {
 model PaymentTransaction {
   id                String        @id @default(uuid())
   merchantId        String
-  merchantName      String
+  merchantName      String?       // Optional - falls back to merchantId if not provided
   orderId           String
   cardToken         String
   amount            Decimal       @db.Decimal(15, 2)
