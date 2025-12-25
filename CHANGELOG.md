@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Webhook signature format mismatch** (2025-12-25)
+  - NSIM sent signature as plain hex, but SSIM expects `sha256=<hex>` format
+  - Fix: Added `sha256=` prefix to `X-Webhook-Signature` header
+  - Affected: Webhook deliveries failing signature verification on SSIM side
+
 - **Critical: merchantName field causing transaction save failure** (2025-12-25)
   - Transactions were authorized by BSIM but failed to persist to database
   - Root cause: `merchantName` was required but SSIMs don't send it

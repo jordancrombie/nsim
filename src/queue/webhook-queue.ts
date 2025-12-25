@@ -60,7 +60,7 @@ async function deliverWebhook(job: Job<WebhookJobData>): Promise<WebhookDelivery
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Webhook-Signature': signature,
+        'X-Webhook-Signature': `sha256=${signature}`,
         'X-Webhook-Id': payload.id,
         'X-Webhook-Timestamp': payload.timestamp,
       },
