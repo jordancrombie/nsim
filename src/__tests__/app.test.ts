@@ -1,5 +1,11 @@
-import { jest, describe, it, expect } from '@jest/globals';
+import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import request from 'supertest';
+import { MockPaymentRepository } from './mocks/MockPaymentRepository';
+import { MockWebhookRepository } from './mocks/MockWebhookRepository';
+
+// Create shared mock instances
+let mockPaymentRepository: MockPaymentRepository;
+let mockWebhookRepository: MockWebhookRepository;
 
 // Mock the BsimClient to avoid real HTTP calls
 jest.unstable_mockModule('../services/bsim-client', () => ({
@@ -16,20 +22,62 @@ jest.unstable_mockModule('../services/bsim-client', () => ({
   })),
 }));
 
+// Mock the bsim-registry
+jest.unstable_mockModule('../services/bsim-registry', () => ({
+  bsimRegistry: {
+    listProviders: () => [
+      { bsimId: 'bsim', name: 'Bank Simulator', baseUrl: 'http://localhost:3001', apiKey: 'test-key' },
+    ],
+    getProvider: (bsimId: string) =>
+      bsimId === 'bsim'
+        ? { bsimId: 'bsim', name: 'Bank Simulator', baseUrl: 'http://localhost:3001', apiKey: 'test-key' }
+        : undefined,
+    getDefaultProvider: () => ({
+      bsimId: 'bsim',
+      name: 'Bank Simulator',
+      baseUrl: 'http://localhost:3001',
+      apiKey: 'test-key',
+    }),
+  },
+}));
+
 // Mock the webhook queue
 jest.unstable_mockModule('../queue/webhook-queue', () => ({
   enqueueWebhook: jest.fn().mockResolvedValue('job-123'),
 }));
 
-// Import app after mocks
+// Mock the repository factory
+jest.unstable_mockModule('../repositories/index', () => ({
+  getPaymentRepository: () => mockPaymentRepository,
+  getWebhookRepository: () => mockWebhookRepository,
+  setPaymentRepository: jest.fn(),
+  setWebhookRepository: jest.fn(),
+  clearRepositories: jest.fn(),
+}));
+
+// Import app and services after mocks
 const { default: app } = await import('../app');
+const { clearPaymentService } = await import('../services/payment');
+const { clearWebhookService } = await import('../services/webhook');
+
+beforeEach(() => {
+  mockPaymentRepository = new MockPaymentRepository();
+  mockWebhookRepository = new MockWebhookRepository();
+  clearPaymentService();
+  clearWebhookService();
+});
+
+afterEach(() => {
+  mockPaymentRepository?.clear();
+  mockWebhookRepository?.clear();
+  clearPaymentService();
+  clearWebhookService();
+});
 
 describe('App Integration', () => {
   describe('Middleware', () => {
     it('should have CORS headers enabled', async () => {
-      const response = await request(app)
-        .options('/health')
-        .set('Origin', 'http://example.com');
+      const response = await request(app).options('/health').set('Origin', 'http://example.com');
 
       // CORS should allow the request
       expect(response.headers['access-control-allow-origin']).toBeDefined();
@@ -68,23 +116,20 @@ describe('App Integration', () => {
     });
 
     it('should mount payment routes at /api/v1/payments', async () => {
-      const response = await request(app)
-        .post('/api/v1/payments/authorize')
-        .send({
-          merchantId: 'test-merchant',
-          merchantName: 'Test Store',
-          amount: 50,
-          cardToken: 'ctok_valid_token_123',
-          orderId: 'order-app-test',
-        });
+      const response = await request(app).post('/api/v1/payments/authorize').send({
+        merchantId: 'test-merchant',
+        merchantName: 'Test Store',
+        amount: 50,
+        cardToken: 'ctok_valid_token_123',
+        orderId: 'order-app-test',
+      });
 
       // Should reach the payment routes
       expect([200, 400]).toContain(response.status);
     });
 
     it('should mount webhook routes at /api/v1/webhooks', async () => {
-      const response = await request(app)
-        .get('/api/v1/webhooks/events/list');
+      const response = await request(app).get('/api/v1/webhooks/events/list');
 
       expect(response.status).toBe(200);
       expect(response.body.events).toBeDefined();

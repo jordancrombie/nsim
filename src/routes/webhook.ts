@@ -26,7 +26,7 @@ const VALID_EVENTS: WebhookEventType[] = [
  * POST /api/v1/webhooks
  * Register a new webhook
  */
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const { merchantId, url, events, secret } = req.body;
 
   // Validate required fields
@@ -64,71 +64,86 @@ router.post('/', (req: Request, res: Response) => {
     });
   }
 
-  const webhook = registerWebhook({
-    merchantId,
-    url,
-    events: events as WebhookEventType[],
-    secret,
-  });
+  try {
+    const webhook = await registerWebhook({
+      merchantId,
+      url,
+      events: events as WebhookEventType[],
+      secret,
+    });
 
-  // Return webhook config (including secret only on creation)
-  res.status(201).json({
-    id: webhook.id,
-    merchantId: webhook.merchantId,
-    url: webhook.url,
-    events: webhook.events,
-    secret: webhook.secret, // Only returned on creation
-    createdAt: webhook.createdAt.toISOString(),
-  });
+    // Return webhook config (including secret only on creation)
+    res.status(201).json({
+      id: webhook.id,
+      merchantId: webhook.merchantId,
+      url: webhook.url,
+      events: webhook.events,
+      secret: webhook.secret, // Only returned on creation
+      createdAt: webhook.createdAt.toISOString(),
+    });
+  } catch (error) {
+    console.error('[WebhookRoutes] Failed to register webhook:', error);
+    res.status(500).json({ error: 'Failed to register webhook' });
+  }
 });
 
 /**
  * GET /api/v1/webhooks/:id
  * Get a webhook by ID
  */
-router.get('/:id', (req: Request, res: Response) => {
-  const webhook = getWebhook(req.params.id);
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const webhook = await getWebhook(req.params.id);
 
-  if (!webhook) {
-    return res.status(404).json({ error: 'Webhook not found' });
+    if (!webhook) {
+      return res.status(404).json({ error: 'Webhook not found' });
+    }
+
+    res.json({
+      id: webhook.id,
+      merchantId: webhook.merchantId,
+      url: webhook.url,
+      events: webhook.events,
+      isActive: webhook.isActive,
+      createdAt: webhook.createdAt.toISOString(),
+      updatedAt: webhook.updatedAt.toISOString(),
+    });
+  } catch (error) {
+    console.error('[WebhookRoutes] Failed to get webhook:', error);
+    res.status(500).json({ error: 'Failed to get webhook' });
   }
-
-  res.json({
-    id: webhook.id,
-    merchantId: webhook.merchantId,
-    url: webhook.url,
-    events: webhook.events,
-    isActive: webhook.isActive,
-    createdAt: webhook.createdAt.toISOString(),
-    updatedAt: webhook.updatedAt.toISOString(),
-  });
 });
 
 /**
  * GET /api/v1/webhooks/merchant/:merchantId
  * Get all webhooks for a merchant
  */
-router.get('/merchant/:merchantId', (req: Request, res: Response) => {
-  const webhooks = getWebhooksForMerchant(req.params.merchantId);
+router.get('/merchant/:merchantId', async (req: Request, res: Response) => {
+  try {
+    const webhooks = await getWebhooksForMerchant(req.params.merchantId);
 
-  res.json({
-    merchantId: req.params.merchantId,
-    webhooks: webhooks.map((w) => ({
-      id: w.id,
-      url: w.url,
-      events: w.events,
-      isActive: w.isActive,
-      createdAt: w.createdAt.toISOString(),
-      updatedAt: w.updatedAt.toISOString(),
-    })),
-  });
+    res.json({
+      merchantId: req.params.merchantId,
+      webhooks: webhooks.map((w) => ({
+        id: w.id,
+        url: w.url,
+        events: w.events,
+        isActive: w.isActive,
+        createdAt: w.createdAt.toISOString(),
+        updatedAt: w.updatedAt.toISOString(),
+      })),
+    });
+  } catch (error) {
+    console.error('[WebhookRoutes] Failed to get webhooks for merchant:', error);
+    res.status(500).json({ error: 'Failed to get webhooks' });
+  }
 });
 
 /**
  * PATCH /api/v1/webhooks/:id
  * Update a webhook
  */
-router.patch('/:id', (req: Request, res: Response) => {
+router.patch('/:id', async (req: Request, res: Response) => {
   const { url, events, isActive } = req.body;
   const updates: any = {};
 
@@ -166,43 +181,58 @@ router.patch('/:id', (req: Request, res: Response) => {
     updates.isActive = Boolean(isActive);
   }
 
-  const webhook = updateWebhook(req.params.id, updates);
+  try {
+    const webhook = await updateWebhook(req.params.id, updates);
 
-  if (!webhook) {
-    return res.status(404).json({ error: 'Webhook not found' });
+    if (!webhook) {
+      return res.status(404).json({ error: 'Webhook not found' });
+    }
+
+    res.json({
+      id: webhook.id,
+      merchantId: webhook.merchantId,
+      url: webhook.url,
+      events: webhook.events,
+      isActive: webhook.isActive,
+      updatedAt: webhook.updatedAt.toISOString(),
+    });
+  } catch (error) {
+    console.error('[WebhookRoutes] Failed to update webhook:', error);
+    res.status(500).json({ error: 'Failed to update webhook' });
   }
-
-  res.json({
-    id: webhook.id,
-    merchantId: webhook.merchantId,
-    url: webhook.url,
-    events: webhook.events,
-    isActive: webhook.isActive,
-    updatedAt: webhook.updatedAt.toISOString(),
-  });
 });
 
 /**
  * DELETE /api/v1/webhooks/:id
  * Delete a webhook
  */
-router.delete('/:id', (req: Request, res: Response) => {
-  const deleted = deleteWebhook(req.params.id);
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const deleted = await deleteWebhook(req.params.id);
 
-  if (!deleted) {
-    return res.status(404).json({ error: 'Webhook not found' });
+    if (!deleted) {
+      return res.status(404).json({ error: 'Webhook not found' });
+    }
+
+    res.status(204).send();
+  } catch (error) {
+    console.error('[WebhookRoutes] Failed to delete webhook:', error);
+    res.status(500).json({ error: 'Failed to delete webhook' });
   }
-
-  res.status(204).send();
 });
 
 /**
  * GET /api/v1/webhooks/stats
  * Get webhook statistics (admin endpoint)
  */
-router.get('/admin/stats', (req: Request, res: Response) => {
-  const stats = getWebhookStats();
-  res.json(stats);
+router.get('/admin/stats', async (req: Request, res: Response) => {
+  try {
+    const stats = await getWebhookStats();
+    res.json(stats);
+  } catch (error) {
+    console.error('[WebhookRoutes] Failed to get webhook stats:', error);
+    res.status(500).json({ error: 'Failed to get webhook stats' });
+  }
 });
 
 /**

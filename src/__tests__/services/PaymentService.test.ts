@@ -1,8 +1,10 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { MockBsimClient } from '../mocks/MockBsimClient';
+import { MockPaymentRepository } from '../mocks/MockPaymentRepository';
 
-// Create a shared mock instance - must be before the mock
+// Create shared mock instances - must be before the mock
 let mockBsimClient: MockBsimClient;
+let mockPaymentRepository: MockPaymentRepository;
 
 // Mock the BsimClient
 jest.unstable_mockModule('../../services/bsim-client', () => ({
@@ -28,6 +30,11 @@ jest.unstable_mockModule('../../services/bsim-registry', () => ({
   },
 }));
 
+// Mock the webhook service to avoid database calls
+jest.unstable_mockModule('../../services/webhook', () => ({
+  sendWebhookNotification: jest.fn().mockResolvedValue(undefined),
+}));
+
 // Dynamic import after mock setup
 const { PaymentService } = await import('../../services/payment');
 
@@ -36,11 +43,13 @@ describe('PaymentService', () => {
 
   beforeEach(() => {
     mockBsimClient = new MockBsimClient();
-    paymentService = new PaymentService();
+    mockPaymentRepository = new MockPaymentRepository();
+    paymentService = new PaymentService(mockPaymentRepository);
   });
 
   afterEach(() => {
     mockBsimClient.clear();
+    mockPaymentRepository.clear();
   });
 
   describe('authorize', () => {
@@ -457,7 +466,7 @@ describe('PaymentService', () => {
       const expired = await paymentService.getExpiredAuthorizations();
 
       // Fresh authorizations should not be expired
-      expect(expired.filter(t => t.orderId.includes('order-not-expired'))).toHaveLength(0);
+      expect(expired.filter((t) => t.orderId.includes('order-not-expired'))).toHaveLength(0);
     });
 
     it('should not include captured transactions', async () => {
@@ -473,7 +482,7 @@ describe('PaymentService', () => {
       await paymentService.capture({ transactionId: authResponse.transactionId });
 
       const expired = await paymentService.getExpiredAuthorizations();
-      const capturedTxn = expired.find(t => t.id === authResponse.transactionId);
+      const capturedTxn = expired.find((t) => t.id === authResponse.transactionId);
 
       expect(capturedTxn).toBeUndefined();
     });
@@ -491,7 +500,7 @@ describe('PaymentService', () => {
       await paymentService.void({ transactionId: authResponse.transactionId });
 
       const expired = await paymentService.getExpiredAuthorizations();
-      const voidedTxn = expired.find(t => t.id === authResponse.transactionId);
+      const voidedTxn = expired.find((t) => t.id === authResponse.transactionId);
 
       expect(voidedTxn).toBeUndefined();
     });

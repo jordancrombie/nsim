@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Database Persistence** - PostgreSQL storage with Prisma ORM
+  - Replaces in-memory storage with persistent PostgreSQL database
+  - Repository pattern for clean separation of concerns
+  - Payment transactions stored in `nsim_payment_transactions` table
+  - Webhook configurations stored in `nsim_webhook_configs` table
+  - Webhook delivery history stored in `nsim_webhook_deliveries` table
+  - Shared database architecture with `nsim_` prefix for all tables/enums
+  - Works alongside BSIM tables in the same physical database
+  - Mock repositories for testing (181 tests passing)
+  - Environment: Set `DATABASE_URL` to PostgreSQL connection string
+
 - **Multi-BSIM Support** - Payment routing to multiple BSIM (bank) instances
   - BSIM provider registry with env-based configuration
   - Automatic bank detection from token format: `wsim_{bsimId}_xxx`
@@ -48,7 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Initial Payment Network Service** - Express.js/TypeScript payment routing middleware
   - Routes payment requests between SSIM (merchants) and BSIM (card issuers)
   - Payment operations: authorize, capture, void, refund
-  - Transaction status tracking with in-memory store (PostgreSQL coming soon)
+  - Transaction status tracking with PostgreSQL persistence
   - BSIM client stub for integration testing
 
 - **OpenAPI 3.0 Specification** - Complete API contract for SSIM integration
@@ -131,6 +142,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Webhook management API (register, list, update, delete)
 
 ### Coming Soon
-- PostgreSQL for persistent transaction storage
 - AWS SQS support for production queues
 - OpenAPI Swagger UI at `/docs`

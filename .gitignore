@@ -7,3 +7,5 @@ coverage/
 
 # Local deployment plans - shared via filesystem, not git
 LOCAL_DEPLOYMENT_PLANS/
+
+/src/generated/prisma

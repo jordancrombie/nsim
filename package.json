@@ -34,6 +34,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "@prisma/client": "^5.22.0",
     "bullmq": "^5.65.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
@@ -51,6 +52,7 @@
     "@types/supertest": "^6.0.3",
     "jest": "^30.2.0",
     "nodemon": "^3.1.11",
+    "prisma": "^5.22.0",
     "supertest": "^7.1.4",
     "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",

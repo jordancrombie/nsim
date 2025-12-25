@@ -1,0 +1,115 @@
+// NSIM Payment Network Database Schema
+// PostgreSQL with Prisma ORM
+//
+// SHARED DATABASE ARCHITECTURE:
+// This schema uses @@map() directives to prefix all tables with 'nsim_'
+// to avoid conflicts when sharing a database with other services (BSIM, WSIM, etc.)
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Payment status enum
+enum PaymentStatus {
+  pending
+  authorized
+  captured
+  voided
+  refunded
+  declined
+  expired
+  failed
+
+  @@map("nsim_payment_status")
+}
+
+// Webhook event types enum
+enum WebhookEventType {
+  payment_authorized
+  payment_captured
+  payment_voided
+  payment_refunded
+  payment_declined
+  payment_expired
+  payment_failed
+
+  @@map("nsim_webhook_event_type")
+}
+
+// Payment transactions
+model PaymentTransaction {
+  id                String        @id @default(uuid())
+  merchantId        String
+  merchantName      String
+  orderId           String
+  cardToken         String
+  amount            Decimal       @db.Decimal(15, 2)
+  currency          String        @default("CAD") @db.VarChar(3)
+  status            PaymentStatus @default(pending)
+  authorizationCode String?
+  capturedAmount    Decimal       @default(0) @db.Decimal(15, 2)
+  refundedAmount    Decimal       @default(0) @db.Decimal(15, 2)
+  description       String?
+  metadata          Json?
+  declineReason     String?
+  bsimId            String?       // Multi-bank routing: which BSIM processed this
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  expiresAt         DateTime?
+
+  @@index([merchantId])
+  @@index([orderId])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([bsimId])
+  @@index([createdAt])
+  @@map("nsim_payment_transactions")
+}
+
+// Webhook configurations
+model WebhookConfig {
+  id         String             @id @default(uuid())
+  merchantId String
+  url        String
+  events     WebhookEventType[]
+  secret     String
+  isActive   Boolean            @default(true)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  // Delivery history
+  deliveries WebhookDelivery[]
+
+  @@index([merchantId])
+  @@index([isActive])
+  @@map("nsim_webhook_configs")
+}
+
+// Webhook delivery history for auditing and debugging
+model WebhookDelivery {
+  id            String           @id @default(uuid())
+  webhookId     String
+  webhook       WebhookConfig    @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  event         WebhookEventType
+  payloadId     String           // The unique ID of the webhook payload
+  transactionId String
+  attempt       Int              @default(1)
+  success       Boolean
+  statusCode    Int?
+  error         String?
+  payload       Json             // Store the full payload for debugging
+  deliveredAt   DateTime?
+  createdAt     DateTime         @default(now())
+
+  @@index([webhookId])
+  @@index([transactionId])
+  @@index([createdAt])
+  @@index([success])
+  @@map("nsim_webhook_deliveries")
+}
