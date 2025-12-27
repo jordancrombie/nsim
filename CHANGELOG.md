@@ -60,10 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `engines` field to package.json enforcing Node.js >=20.0.0
   - Suppressed dotenv promotional messages with `{ quiet: true }` option
   - Build passes cleanly with no warnings
-  - All 170 tests passing, ~85% code coverage
   - Zero security vulnerabilities (npm audit clean)
 
-### Added
+---
+
+## Previous Releases
+
+### Added (Historical)
 
 - **Project Logo** - Added NSIM branding to README
 
@@ -139,7 +142,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Expiry warnings for tokens near TTL (wallet tokens have 5-minute TTL)
 
 - **Jest Testing Framework** - Comprehensive unit test coverage
-  - 170 tests across 12 test suites (~84% code coverage)
+  - 181 tests across 13 test suites (~85% code coverage)
   - MockBsimClient for simulating BSIM payment responses
   - Tests for authorization, capture, void, and refund flows
   - Full payment lifecycle integration tests

@@ -23,6 +23,11 @@ npm install
 
 # Copy environment config
 cp .env.example .env
+# Edit .env and set DATABASE_URL to your PostgreSQL connection
+
+# Setup database (creates nsim_* tables)
+npx prisma generate
+npx prisma db push
 
 # Run in development
 npm run dev
@@ -69,7 +74,7 @@ npm test
 │                  ├──→ SSIM (Merchant) → NSIM ───┤                  │
 │  Browser/App ────┘                       │      └→ NewBank BSIM    │
 │                                          ↓                         │
-│                                 Transaction Store                  │
+│                              PostgreSQL (nsim_* tables)            │
 │                                          ↓                         │
 │                              Webhook Queue (BullMQ/Redis)          │
 │                                                                    │
@@ -110,6 +115,17 @@ pending → authorized → captured → refunded
 - `payment.failed` - Processing error
 
 ## Configuration
+
+### Database (Required)
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| DATABASE_URL | PostgreSQL connection string | `postgresql://user:pass@host:5432/banksim` |
+
+NSIM uses PostgreSQL with Prisma ORM. Tables use the `nsim_` prefix to allow sharing a database with BSIM:
+- `nsim_payment_transactions` - Payment transaction records
+- `nsim_webhook_configs` - Webhook endpoint configurations
+- `nsim_webhook_deliveries` - Webhook delivery history
 
 ### Core Settings
 
@@ -220,7 +236,9 @@ npm run test:coverage # Coverage report
 
 ```bash
 docker build -t nsim .
-docker run -p 3006:3006 nsim
+docker run -p 3006:3006 -e DATABASE_URL="postgresql://..." nsim
 ```
 
-Multi-stage build with non-root user for security. Integrated into BSIM's docker-compose as `payment-network` service.
+Multi-stage build with non-root user for security. Includes Prisma client generation. Integrated into BSIM's docker-compose as `payment-network` service.
+
+**Note:** Run `npx prisma db push` before first deployment to create database tables.
