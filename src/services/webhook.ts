@@ -109,7 +109,7 @@ export class WebhookService {
 
       const payload: WebhookPayload = {
         id: randomUUID(),
-        event,
+        type: event,
         timestamp: new Date().toISOString(),
         data,
       };

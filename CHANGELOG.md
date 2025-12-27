@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Webhook payload field name mismatch** (2025-12-27)
+  - NSIM sent event type as `event` field, but SSIM expects `type` field
+  - Fix: Renamed `event` to `type` in WebhookPayload interface
+  - Affected: SSIM receiving `undefined` event type, webhooks not processed
+
 - **Webhook signature format mismatch** (2025-12-25)
   - NSIM sent signature as plain hex, but SSIM expects `sha256=<hex>` format
   - Fix: Added `sha256=` prefix to `X-Webhook-Signature` header

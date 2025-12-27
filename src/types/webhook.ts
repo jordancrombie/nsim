@@ -39,7 +39,7 @@ export interface WebhookConfig {
  */
 export interface WebhookPayload {
   id: string; // Unique webhook delivery ID
-  event: WebhookEventType;
+  type: WebhookEventType;
   timestamp: string; // ISO 8601
   data: WebhookPayloadData;
 }

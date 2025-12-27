@@ -147,7 +147,7 @@ export async function stopWebhookWorker(): Promise<void> {
  */
 export async function enqueueWebhook(jobData: WebhookJobData): Promise<string> {
   const queue = getWebhookQueue();
-  const job = await queue.add(`webhook-${jobData.payload.event}`, jobData, {
+  const job = await queue.add(`webhook-${jobData.payload.type}`, jobData, {
     jobId: jobData.payload.id, // Use webhook ID as job ID for deduplication
   });
   console.log(`[WebhookQueue] Enqueued webhook ${jobData.payload.id} (job ${job.id})`);

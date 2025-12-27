@@ -60,7 +60,7 @@ describe('Webhook Queue', () => {
         webhookSecret: 'secret-key',
         payload: {
           id: 'payload-123',
-          event: 'payment.authorized' as const,
+          type: 'payment.authorized' as const,
           timestamp: new Date().toISOString(),
           data: {
             transactionId: 'txn-123',
