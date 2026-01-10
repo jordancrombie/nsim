@@ -1,0 +1,65 @@
+# NSIM Buildkite Pipeline - Build & Test Only
+# Tests and builds Docker image, pushes to ECR. NO deployment.
+#
+# NSIM is a single component (Payment Network backend API server)
+#
+# Required Buildkite Secrets:
+#   - AWS_ACCESS_KEY_ID
+#   - AWS_SECRET_ACCESS_KEY
+
+env:
+  AWS_REGION: "ca-central-1"
+  AWS_ACCOUNT_ID: "301868770392"
+  ECR_REGISTRY: "301868770392.dkr.ecr.ca-central-1.amazonaws.com"
+  NODE_VERSION: "20"
+
+steps:
+  # ============================================================================
+  # Stage 1: Run Tests
+  # ============================================================================
+  - group: ":test_tube: Tests"
+    key: "tests"
+    steps:
+      - label: ":nodejs: NSIM Tests"
+        key: "test-nsim"
+        agents:
+          queue: "Buildkite-selfhosted"
+        commands:
+          - "echo '--- :nodejs: Setting up Node.js'"
+          - "node --version"
+          - "echo '--- :npm: Installing dependencies'"
+          - "npm ci"
+          - "echo '--- :prisma: Generating Prisma client'"
+          - "npx prisma generate"
+          - "echo '--- :hammer: TypeScript check'"
+          - "npm run lint"
+          - "echo '--- :test_tube: Running tests'"
+          - "npm test"
+
+  # ============================================================================
+  # Stage 2: Build and Push Docker Image (after tests pass)
+  # ============================================================================
+  - wait
+
+  - group: ":docker: Build & Push"
+    key: "build"
+    steps:
+      - label: ":docker: Build NSIM"
+        key: "build-nsim"
+        agents:
+          queue: "Buildkite-selfhosted"
+        commands:
+          - "echo '--- :aws: Configuring AWS credentials'"
+          - "if buildkite-agent secret get AWS_ACCESS_KEY_ID > /dev/null 2>&1; then export AWS_ACCESS_KEY_ID=$$(buildkite-agent secret get AWS_ACCESS_KEY_ID); fi"
+          - "if buildkite-agent secret get AWS_SECRET_ACCESS_KEY > /dev/null 2>&1; then export AWS_SECRET_ACCESS_KEY=$$(buildkite-agent secret get AWS_SECRET_ACCESS_KEY); fi"
+          - "echo '--- :aws: Logging into ECR'"
+          - "aws ecr get-login-password --region $$AWS_REGION | docker login --username AWS --password-stdin $$ECR_REGISTRY"
+          - "echo '--- :docker: Pulling cache image'"
+          - "docker pull $$ECR_REGISTRY/bsim/payment-network:latest || true"
+          - "echo '--- :docker: Building NSIM image'"
+          - "DOCKER_BUILDKIT=1 docker build --platform linux/amd64 --cache-from $$ECR_REGISTRY/bsim/payment-network:latest --build-arg BUILDKIT_INLINE_CACHE=1 -t $$ECR_REGISTRY/bsim/payment-network:$$BUILDKITE_COMMIT -t $$ECR_REGISTRY/bsim/payment-network:latest ."
+          - "echo '--- :docker: Pushing NSIM image'"
+          - "docker push $$ECR_REGISTRY/bsim/payment-network:$$BUILDKITE_COMMIT"
+          - "docker push $$ECR_REGISTRY/bsim/payment-network:latest"
+          - "echo '--- :white_check_mark: NSIM image pushed'"
+          - "echo 'Image: $$ECR_REGISTRY/bsim/payment-network:$$BUILDKITE_COMMIT'"

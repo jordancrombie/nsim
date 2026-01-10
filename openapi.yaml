@@ -24,7 +24,7 @@ info:
     5. BSIM creates an authorization hold on the card
     6. Merchant captures the payment when goods are shipped
     7. Optional: void or refund as needed
-  version: 1.1.0
+  version: 1.2.0
   contact:
     name: BSIM Team
     url: https://github.com/jordancrombie/nsim
@@ -226,6 +226,174 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
+  /webhooks:
+    post:
+      summary: Register a webhook
+      description: |
+        Register a webhook endpoint to receive payment event notifications.
+        Returns a secret for HMAC signature verification.
+      tags:
+        - Webhooks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookRegistration'
+      responses:
+        '201':
+          description: Webhook registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookConfig'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /webhooks/merchant/{merchantId}:
+    get:
+      summary: List merchant webhooks
+      description: Get all webhook configurations for a merchant
+      tags:
+        - Webhooks
+      parameters:
+        - name: merchantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Webhook list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WebhookConfig'
+
+  /webhooks/{webhookId}:
+    patch:
+      summary: Update a webhook
+      description: Update webhook URL, events, or active status
+      tags:
+        - Webhooks
+      parameters:
+        - name: webhookId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookUpdate'
+      responses:
+        '200':
+          description: Webhook updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookConfig'
+        '404':
+          description: Webhook not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete a webhook
+      description: Remove a webhook registration
+      tags:
+        - Webhooks
+      parameters:
+        - name: webhookId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Webhook deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Webhook deleted
+        '404':
+          description: Webhook not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /diagnostics/analyze-token:
+    post:
+      summary: Analyze a card token
+      description: |
+        Debug utility to analyze a card token without processing a payment.
+        Returns token type, format, and any decoded claims.
+      tags:
+        - Diagnostics
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - cardToken
+              properties:
+                cardToken:
+                  type: string
+                  description: The token to analyze
+                  example: wsim_newbank_abc123
+      responses:
+        '200':
+          description: Token analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenAnalysis'
+
+  /diagnostics/token-types:
+    get:
+      summary: List supported token types
+      description: Returns documentation of all supported card token formats
+      tags:
+        - Diagnostics
+      security: []
+      responses:
+        '200':
+          description: Token type documentation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tokenTypes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        prefix:
+                          type: string
+                        description:
+                          type: string
+                        example:
+                          type: string
 
 components:
   securitySchemes:
@@ -439,8 +607,111 @@ components:
           type: string
           description: Detailed error message
 
+    WebhookRegistration:
+      type: object
+      required:
+        - merchantId
+        - url
+        - events
+      properties:
+        merchantId:
+          type: string
+          description: Merchant identifier
+          example: ssim-regal-moose
+        url:
+          type: string
+          format: uri
+          description: HTTPS endpoint to receive webhook events
+          example: https://store.example.com/webhooks/payment
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookEventType'
+          description: Events to subscribe to
+          example: ['payment.authorized', 'payment.captured']
+        secret:
+          type: string
+          description: Optional custom secret (auto-generated if not provided)
+
+    WebhookConfig:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        merchantId:
+          type: string
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookEventType'
+        secret:
+          type: string
+          description: HMAC secret for signature verification
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    WebhookUpdate:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookEventType'
+        isActive:
+          type: boolean
+
+    WebhookEventType:
+      type: string
+      enum:
+        - payment.authorized
+        - payment.captured
+        - payment.voided
+        - payment.refunded
+        - payment.declined
+        - payment.expired
+        - payment.failed
+
+    TokenAnalysis:
+      type: object
+      properties:
+        token:
+          type: string
+        format:
+          type: string
+          enum: [wsim_prefix, ctok_prefix, jwt, unknown]
+        bsimId:
+          type: string
+          description: Detected bank ID for routing
+        isJwt:
+          type: boolean
+        claims:
+          type: object
+          description: Decoded JWT claims (if applicable)
+        warnings:
+          type: array
+          items:
+            type: string
+          description: Any issues detected with the token
+
 tags:
   - name: Health
     description: Service health checks
   - name: Payments
     description: Payment processing operations
+  - name: Webhooks
+    description: Webhook registration and management
+  - name: Diagnostics
+    description: Token analysis and debugging utilities

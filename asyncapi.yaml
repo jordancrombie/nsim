@@ -1,0 +1,257 @@
+asyncapi: 2.6.0
+info:
+  title: NSIM Webhook Events
+  version: 1.0.0
+  description: |
+    Asynchronous webhook events sent by NSIM to registered merchant endpoints.
+
+    ## Overview
+    When payment state changes occur, NSIM sends HTTP POST requests to registered
+    webhook URLs. These events allow merchants to react to payment lifecycle changes
+    in real-time.
+
+    ## Webhook Delivery
+    - Events are delivered via HTTP POST to the registered URL
+    - Delivery is retried up to 5 times with exponential backoff on failure
+    - Events are considered delivered on any 2xx response
+
+    ## Signature Verification
+    All webhook requests include an HMAC-SHA256 signature for verification:
+    ```
+    X-Webhook-Signature: sha256=<hex-encoded-signature>
+    X-Webhook-Id: <unique-event-id>
+    X-Webhook-Timestamp: <ISO-8601-timestamp>
+    ```
+
+    To verify:
+    1. Compute HMAC-SHA256 of the raw request body using your webhook secret
+    2. Compare with the signature in the header (after removing `sha256=` prefix)
+
+  contact:
+    name: BSIM Team
+    url: https://github.com/jordancrombie/nsim
+
+servers:
+  production:
+    url: 'https://{merchantDomain}'
+    protocol: https
+    description: Merchant webhook endpoint
+    variables:
+      merchantDomain:
+        description: The merchant's domain hosting the webhook endpoint
+        default: store.example.com
+
+channels:
+  /webhooks/payment:
+    description: Payment event webhook endpoint (merchant-defined path)
+    publish:
+      operationId: receivePaymentEvent
+      summary: Receive payment lifecycle events
+      description: |
+        NSIM publishes payment events to this endpoint when payment state changes.
+        The actual path is configured when registering the webhook.
+      message:
+        oneOf:
+          - $ref: '#/components/messages/PaymentAuthorized'
+          - $ref: '#/components/messages/PaymentCaptured'
+          - $ref: '#/components/messages/PaymentVoided'
+          - $ref: '#/components/messages/PaymentRefunded'
+          - $ref: '#/components/messages/PaymentDeclined'
+          - $ref: '#/components/messages/PaymentExpired'
+          - $ref: '#/components/messages/PaymentFailed'
+
+components:
+  messages:
+    PaymentAuthorized:
+      name: payment.authorized
+      title: Payment Authorized
+      summary: Funds have been held on the customer's card
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/WebhookPayload'
+      examples:
+        - name: Authorization approved
+          payload:
+            id: "f58fc471-68e8-4868-8501-7f000fdca103"
+            type: "payment.authorized"
+            timestamp: "2025-12-27T17:00:18.417Z"
+            data:
+              transactionId: "103237f6-c928-42a4-8243-8125aa050748"
+              merchantId: "ssim-regal-moose"
+              orderId: "order-12345"
+              amount: 59.99
+              currency: "CAD"
+              status: "authorized"
+              authorizationCode: "AUTH-F7C42498"
+
+    PaymentCaptured:
+      name: payment.captured
+      title: Payment Captured
+      summary: Payment has been settled to the merchant
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/WebhookPayload'
+      examples:
+        - name: Full capture
+          payload:
+            id: "a1b2c3d4-5678-90ab-cdef-1234567890ab"
+            type: "payment.captured"
+            timestamp: "2025-12-27T18:30:00.000Z"
+            data:
+              transactionId: "103237f6-c928-42a4-8243-8125aa050748"
+              merchantId: "ssim-regal-moose"
+              orderId: "order-12345"
+              amount: 59.99
+              currency: "CAD"
+              status: "captured"
+              capturedAmount: 59.99
+
+    PaymentVoided:
+      name: payment.voided
+      title: Payment Voided
+      summary: Authorization has been cancelled, funds released
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/WebhookPayload'
+
+    PaymentRefunded:
+      name: payment.refunded
+      title: Payment Refunded
+      summary: Funds have been returned to the customer
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/WebhookPayload'
+      examples:
+        - name: Partial refund
+          payload:
+            id: "b2c3d4e5-6789-01ab-cdef-2345678901bc"
+            type: "payment.refunded"
+            timestamp: "2025-12-28T10:15:00.000Z"
+            data:
+              transactionId: "103237f6-c928-42a4-8243-8125aa050748"
+              merchantId: "ssim-regal-moose"
+              orderId: "order-12345"
+              amount: 59.99
+              currency: "CAD"
+              status: "refunded"
+              refundedAmount: 20.00
+              refundId: "ref-abc123"
+
+    PaymentDeclined:
+      name: payment.declined
+      title: Payment Declined
+      summary: Authorization was declined by the issuer
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/WebhookPayload'
+      examples:
+        - name: Insufficient funds
+          payload:
+            id: "c3d4e5f6-7890-12ab-cdef-3456789012cd"
+            type: "payment.declined"
+            timestamp: "2025-12-27T17:00:20.000Z"
+            data:
+              transactionId: "203237f6-c928-42a4-8243-8125aa050749"
+              merchantId: "ssim-regal-moose"
+              orderId: "order-12346"
+              amount: 1000.00
+              currency: "CAD"
+              status: "declined"
+              declineReason: "Insufficient credit"
+
+    PaymentExpired:
+      name: payment.expired
+      title: Payment Expired
+      summary: Authorization expired without capture (after 7 days)
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/WebhookPayload'
+
+    PaymentFailed:
+      name: payment.failed
+      title: Payment Failed
+      summary: Payment processing encountered an error
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/WebhookPayload'
+
+  schemas:
+    WebhookPayload:
+      type: object
+      required:
+        - id
+        - type
+        - timestamp
+        - data
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for this webhook delivery
+        type:
+          $ref: '#/components/schemas/WebhookEventType'
+        timestamp:
+          type: string
+          format: date-time
+          description: When the event occurred (ISO 8601)
+        data:
+          $ref: '#/components/schemas/PaymentEventData'
+
+    WebhookEventType:
+      type: string
+      enum:
+        - payment.authorized
+        - payment.captured
+        - payment.voided
+        - payment.refunded
+        - payment.declined
+        - payment.expired
+        - payment.failed
+
+    PaymentEventData:
+      type: object
+      required:
+        - transactionId
+        - merchantId
+        - orderId
+        - amount
+        - currency
+        - status
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+          description: NSIM transaction identifier
+        merchantId:
+          type: string
+          description: Merchant identifier
+        orderId:
+          type: string
+          description: Merchant's order reference
+        amount:
+          type: number
+          format: decimal
+          description: Original transaction amount
+        currency:
+          type: string
+          description: ISO 4217 currency code
+        status:
+          type: string
+          description: Current payment status
+        authorizationCode:
+          type: string
+          description: Authorization code (for authorized/captured events)
+        declineReason:
+          type: string
+          description: Reason for decline (for declined events)
+        capturedAmount:
+          type: number
+          format: decimal
+          description: Amount captured (for captured events)
+        refundedAmount:
+          type: number
+          format: decimal
+          description: Total amount refunded (for refunded events)
+        refundId:
+          type: string
+          description: Refund identifier (for refunded events)

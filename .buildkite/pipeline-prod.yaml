@@ -1,0 +1,68 @@
+# NSIM Buildkite Pipeline - Production Deployment
+# Manually triggered pipeline to build, push, and deploy to production EC2.
+#
+# This pipeline is triggered manually when you're ready to release.
+# It builds a fresh image, pushes to ECR, and deploys to production.
+#
+# Usage: Trigger this pipeline manually from Buildkite UI or CLI
+#
+# NSIM is a single component (Payment Network backend API server)
+#
+# Required Buildkite Secrets:
+#   - AWS_ACCESS_KEY_ID
+#   - AWS_SECRET_ACCESS_KEY
+
+env:
+  AWS_REGION: "ca-central-1"
+  AWS_ACCOUNT_ID: "301868770392"
+  ECR_REGISTRY: "301868770392.dkr.ecr.ca-central-1.amazonaws.com"
+
+steps:
+  # ============================================================================
+  # Stage 1: Build and Push Docker Image to ECR
+  # ============================================================================
+  - label: ":docker: Build & Push to ECR"
+    key: "build-push"
+    agents:
+      queue: "Buildkite-selfhosted"
+    commands:
+      - "echo '--- :aws: Configuring AWS credentials'"
+      - "if buildkite-agent secret get AWS_ACCESS_KEY_ID > /dev/null 2>&1; then export AWS_ACCESS_KEY_ID=$$(buildkite-agent secret get AWS_ACCESS_KEY_ID); fi"
+      - "if buildkite-agent secret get AWS_SECRET_ACCESS_KEY > /dev/null 2>&1; then export AWS_SECRET_ACCESS_KEY=$$(buildkite-agent secret get AWS_SECRET_ACCESS_KEY); fi"
+      - "echo '--- :aws: Logging into ECR'"
+      - "aws ecr get-login-password --region $$AWS_REGION | docker login --username AWS --password-stdin $$ECR_REGISTRY"
+      - "echo '--- :docker: Building NSIM image (no cache for production)'"
+      - "DOCKER_BUILDKIT=1 docker build --no-cache --platform linux/amd64 -t $$ECR_REGISTRY/bsim/payment-network:$$BUILDKITE_COMMIT -t $$ECR_REGISTRY/bsim/payment-network:latest ."
+      - "echo '--- :docker: Pushing NSIM image'"
+      - "docker push $$ECR_REGISTRY/bsim/payment-network:$$BUILDKITE_COMMIT"
+      - "docker push $$ECR_REGISTRY/bsim/payment-network:latest"
+      - "echo '--- :white_check_mark: NSIM image pushed'"
+      - "echo 'Image: $$ECR_REGISTRY/bsim/payment-network:$$BUILDKITE_COMMIT'"
+
+  # ============================================================================
+  # Stage 2: Deploy to Production EC2
+  # ============================================================================
+  - wait
+
+  - label: ":rocket: Deploy to Production EC2"
+    key: "deploy-prod"
+    agents:
+      queue: "Buildkite-selfhosted"
+    commands:
+      - "echo '--- :aws: Configuring AWS credentials'"
+      - "if buildkite-agent secret get AWS_ACCESS_KEY_ID > /dev/null 2>&1; then export AWS_ACCESS_KEY_ID=$$(buildkite-agent secret get AWS_ACCESS_KEY_ID); fi"
+      - "if buildkite-agent secret get AWS_SECRET_ACCESS_KEY > /dev/null 2>&1; then export AWS_SECRET_ACCESS_KEY=$$(buildkite-agent secret get AWS_SECRET_ACCESS_KEY); fi"
+      - "echo '--- :ec2: Deploying to production EC2 via SSM'"
+      - "DEPLOY_CMD=$$(cat << SCRIPT\ncd /opt/bsim\naws ecr get-login-password --region ca-central-1 | docker login --username AWS --password-stdin 301868770392.dkr.ecr.ca-central-1.amazonaws.com\ndocker pull 301868770392.dkr.ecr.ca-central-1.amazonaws.com/bsim/payment-network:latest\necho \"Running database migrations...\"\ndocker run --rm --network bsim_default -e DATABASE_URL=\"postgresql://bsimadmin:8O9MwSmoA1IUQfOZyw7H4L2lDoeA2M8w@bsim-db.cb80gi4u4k7g.ca-central-1.rds.amazonaws.com:5432/nsim\" 301868770392.dkr.ecr.ca-central-1.amazonaws.com/bsim/payment-network:latest npx prisma migrate deploy\necho \"Migrations complete. Cleaning up orphan containers...\"\ndocker container prune -f\necho \"Starting services...\"\ndocker compose up -d --force-recreate --no-deps bsim-payment-network\nSCRIPT\n)"
+      - "ENCODED_CMD=$$(echo \"$$DEPLOY_CMD\" | base64)"
+      - "aws ssm send-command --instance-ids 'i-0d45924915c774799' --document-name 'AWS-RunShellScript' --parameters \"{\\\"commands\\\":[\\\"echo $$ENCODED_CMD | base64 -d | bash\\\"]}\" --region ca-central-1"
+      - "echo '--- :hourglass: Waiting for deployment to complete'"
+      - "sleep 60"
+      - "echo '--- :white_check_mark: Verifying production deployment'"
+      - "echo 'Checking health endpoint (with retries)...'"
+      - "for i in 1 2 3 4 5; do curl -sf https://payment.banksim.ca/health && break || (echo \"Attempt $$i failed, retrying in 10s...\" && sleep 10); done && curl -sf https://payment.banksim.ca/health || (echo 'FAILED: NSIM health check' && exit 1)"
+      - "echo '--- :mag: Verifying deployed version'"
+      - "NSIM_VERSION=$$(curl -sf https://payment.banksim.ca/health | jq -r '.version // \"unknown\"')"
+      - "echo \"NSIM version: $$NSIM_VERSION\""
+      - "echo '--- :tada: Production deployment complete'"
+      - "echo 'Production NSIM: https://payment.banksim.ca'"
