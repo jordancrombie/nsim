@@ -9,11 +9,23 @@ Payment network middleware connecting SSIM (Store Simulator) and BSIM (Bank Simu
 ## Overview
 
 NSIM routes payment requests from merchants (SSIM) to card issuers (BSIM), handling:
-- Payment authorization with automatic expiry
+- Payment authorization with automatic expiry (7 days)
 - Capture (full and partial)
 - Void
 - Refund (full and partial)
 - Webhook notifications to merchants
+- Multi-bank routing
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| Runtime | Node.js 20+ (ES Modules) |
+| Language | TypeScript 5.x |
+| Framework | Express.js 5.x |
+| Database | PostgreSQL + Prisma ORM |
+| Queue | BullMQ + Redis |
+| Testing | Jest (~85% coverage) |
 
 ## Quick Start
 
@@ -106,13 +118,26 @@ pending → authorized → captured → refunded
 
 ### Webhook Events
 
-- `payment.authorized` - Payment authorized, funds held
-- `payment.captured` - Payment settled to merchant
-- `payment.voided` - Authorization cancelled
-- `payment.refunded` - Payment refunded to customer
-- `payment.declined` - Payment declined by issuer
-- `payment.expired` - Authorization expired
-- `payment.failed` - Processing error
+NSIM sends webhook notifications to registered merchant endpoints when payment state changes:
+
+| Event | Description |
+|-------|-------------|
+| `payment.authorized` | Funds held on customer's card |
+| `payment.captured` | Payment settled to merchant |
+| `payment.voided` | Authorization cancelled |
+| `payment.refunded` | Funds returned to customer |
+| `payment.declined` | Authorization declined by issuer |
+| `payment.expired` | Authorization expired (7 days) |
+| `payment.failed` | Processing error occurred |
+
+**Webhook Signature Verification:**
+
+All webhooks include HMAC-SHA256 signature for verification:
+```
+X-Webhook-Signature: sha256=<hex-encoded-hmac>
+X-Webhook-Id: <unique-event-id>
+X-Webhook-Timestamp: <ISO-8601-timestamp>
+```
 
 ## Configuration
 
@@ -174,6 +199,21 @@ BSIM_PROVIDERS='[
 | WEBHOOK_RETRY_DELAY_MS | Webhook retry delay | 1000 |
 | WEBHOOK_TIMEOUT_MS | Webhook delivery timeout | 10000 |
 
+## API Specifications
+
+NSIM provides OpenAPI and AsyncAPI specifications for integration:
+
+| Specification | File | Description |
+|---------------|------|-------------|
+| **OpenAPI 3.0** | [`openapi.yaml`](openapi.yaml) | REST API endpoints (payments, webhooks, diagnostics) |
+| **AsyncAPI 2.6** | [`asyncapi.yaml`](asyncapi.yaml) | Webhook event payloads and delivery format |
+
+**View specifications:**
+- OpenAPI: [Swagger Editor](https://editor.swagger.io/) - paste `openapi.yaml` contents
+- AsyncAPI: [AsyncAPI Studio](https://studio.asyncapi.com/) - paste `asyncapi.yaml` contents
+
+See [`docs/README.md`](docs/README.md) for detailed documentation on using these specs.
+
 ## Integration
 
 NSIM provides full HTTP integration with BSIM for payment processing:
@@ -202,15 +242,7 @@ WSIM → BSIM (get wallet_payment_token) → SSIM → NSIM → BSIM (authorize)
 | `wsim_bsim_` | WSIM wallet | Wallet token from default BSIM |
 | `wsim_newbank_` | WSIM wallet | Wallet token from NewBank BSIM |
 | `wsim_{bsimId}_` | WSIM wallet | Wallet token from any configured BSIM |
-| `wallet_payment_token` | JWT type | JWT-based wallet token (5-min TTL, must include `bsimId` claim) |
-
-**Token Flow:**
-1. User initiates payment in WSIM wallet
-2. WSIM requests `wallet_payment_token` JWT from BSIM
-3. WSIM passes token to SSIM merchant
-4. SSIM sends authorization request to NSIM
-5. NSIM forwards token to BSIM for validation and authorization
-6. BSIM validates JWT signature, expiry, and card status
+| `wallet_payment_token` | JWT type | JWT-based wallet token (5-min TTL) |
 
 **Debugging Wallet Tokens:**
 ```bash
@@ -219,8 +251,6 @@ curl -X POST http://localhost:3006/api/v1/diagnostics/analyze-token \
   -H "Content-Type: application/json" \
   -d '{"cardToken": "your-token-here"}'
 ```
-
-Returns token analysis including prefix, JWT claims, expiry status, and warnings.
 
 ## Testing
 
@@ -242,3 +272,14 @@ docker run -p 3006:3006 -e DATABASE_URL="postgresql://..." nsim
 Multi-stage build with non-root user for security. Includes Prisma client generation. Integrated into BSIM's docker-compose as `payment-network` service.
 
 **Note:** Run `npx prisma db push` before first deployment to create database tables.
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [`docs/README.md`](docs/README.md) | Documentation index and API spec guide |
+| [`docs/MERCHANT_INTEGRATION_GUIDE.md`](docs/MERCHANT_INTEGRATION_GUIDE.md) | Complete merchant integration walkthrough |
+| [`docs/EMBEDDED_WALLET_PAYMENT.md`](docs/EMBEDDED_WALLET_PAYMENT.md) | WSIM wallet payment flow |
+| [`openapi.yaml`](openapi.yaml) | OpenAPI 3.0 specification (v1.2.0) |
+| [`asyncapi.yaml`](asyncapi.yaml) | AsyncAPI 2.6 specification |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release notes and changes |
