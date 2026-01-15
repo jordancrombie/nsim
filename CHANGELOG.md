@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Prisma Migration Infrastructure** - Proper migration support for production deployments
+  - Added `prisma/migrations/` directory with baseline `20260115164136_init` migration
+  - Enables safe schema evolution with `prisma migrate deploy`
+  - Replaces risky `db push` workaround in production pipeline
+  - One-time `migrate resolve --applied` required on production (see `LOCAL_DEPLOYMENT_PLANS/MIGRATION_BASELINE_FIX.md`)
+
 - **Database Persistence** - PostgreSQL storage with Prisma ORM
   - Replaces in-memory storage with persistent PostgreSQL database
   - Repository pattern for clean separation of concerns
