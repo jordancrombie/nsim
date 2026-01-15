@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+---
+
+## [1.0.1] - 2026-01-15
+
 ### Added
 
 - **Prisma Migration Infrastructure** - Proper migration support for production deployments
