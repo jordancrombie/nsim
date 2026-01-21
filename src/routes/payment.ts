@@ -25,6 +25,17 @@ router.post('/authorize', async (req: Request, res: Response) => {
       });
     }
 
+    // SACP: Validate agentContext fields if present
+    if (request.agentContext) {
+      const { agentId, ownerId, humanPresent } = request.agentContext;
+      if (!agentId || !ownerId || humanPresent === undefined) {
+        return res.status(400).json({
+          error: 'Invalid agentContext: missing required fields',
+          required: ['agentId', 'ownerId', 'humanPresent'],
+        });
+      }
+    }
+
     const response = await getPaymentService().authorize(request);
     res.status(response.status === 'authorized' ? 200 : 400).json(response);
   } catch (error) {

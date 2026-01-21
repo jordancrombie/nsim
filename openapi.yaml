@@ -24,7 +24,7 @@ info:
     5. BSIM creates an authorization hold on the card
     6. Merchant captures the payment when goods are shipped
     7. Optional: void or refund as needed
-  version: 1.2.0
+  version: 1.3.0
   contact:
     name: BSIM Team
     url: https://github.com/jordancrombie/nsim
@@ -451,6 +451,43 @@ components:
           additionalProperties:
             type: string
           description: Optional key-value metadata
+        agentContext:
+          $ref: '#/components/schemas/AgentContext'
+
+    AgentContext:
+      type: object
+      description: |
+        SACP (SimToolBox Agent Commerce Protocol) context for AI agent-initiated transactions.
+        Required fields when an AI agent initiates a payment on behalf of a human owner.
+      required:
+        - agentId
+        - ownerId
+        - humanPresent
+      properties:
+        agentId:
+          type: string
+          description: Unique agent identifier
+          example: agent_abc123
+        ownerId:
+          type: string
+          description: Human owner of the agent (WSIM user ID)
+          example: user_xyz789
+        humanPresent:
+          type: boolean
+          description: Was a human present when this transaction was initiated?
+          example: false
+        mandateId:
+          type: string
+          description: Reference to authorization mandate (optional)
+          example: mandate_xyz789
+        mandateType:
+          type: string
+          enum:
+            - cart
+            - intent
+            - none
+          description: Type of mandate authorizing this transaction
+          example: cart
 
     AuthorizationResponse:
       type: object
@@ -584,6 +621,22 @@ components:
         expiresAt:
           type: string
           format: date-time
+        # SACP: Agent context fields
+        agentId:
+          type: string
+          description: Agent ID if transaction was initiated by an AI agent
+        agentOwnerId:
+          type: string
+          description: Human owner of the agent (WSIM user ID)
+        agentHumanPresent:
+          type: boolean
+          description: Was human present for this transaction?
+        agentMandateId:
+          type: string
+          description: Reference to authorization mandate
+        agentMandateType:
+          type: string
+          description: Type of mandate (cart, intent, none)
 
     PaymentStatus:
       type: string

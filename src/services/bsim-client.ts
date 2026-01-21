@@ -45,6 +45,17 @@ function isRetryableError(error: unknown): boolean {
   return false;
 }
 
+/**
+ * SACP: Agent context for AI agent-initiated transactions
+ * Forwarded to BSIM for issuer visibility and risk assessment
+ */
+export interface BsimAgentContext {
+  agentId: string;
+  ownerId: string;
+  humanPresent: boolean;
+  mandateType?: 'cart' | 'intent' | 'none';
+}
+
 export interface BsimAuthorizationRequest {
   cardToken: string;
   amount: number;
@@ -53,6 +64,8 @@ export interface BsimAuthorizationRequest {
   merchantName: string;
   orderId: string;
   description?: string;
+  /** SACP: Agent context if transaction initiated by AI agent */
+  agentContext?: BsimAgentContext;
 }
 
 export interface BsimAuthorizationResponse {
@@ -204,6 +217,8 @@ export class BsimClient {
         merchantName: request.merchantName,
         orderId: request.orderId,
         description: request.description,
+        // SACP: Forward agent context to BSIM for issuer visibility
+        ...(request.agentContext && { agentContext: request.agentContext }),
       });
 
       console.log('[BsimClient] Authorize response:', response);

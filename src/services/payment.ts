@@ -160,6 +160,13 @@ export class PaymentService {
       amount: request.amount,
       currency: request.currency || 'CAD',
       bsimId,
+      // SACP: Log agent context if present
+      agentContext: request.agentContext ? {
+        agentId: request.agentContext.agentId,
+        ownerId: request.agentContext.ownerId,
+        humanPresent: request.agentContext.humanPresent,
+        mandateType: request.agentContext.mandateType,
+      } : null,
       tokenAnalysis: {
         prefix: tokenAnalysis.prefix,
         bsimId: tokenAnalysis.bsimId,
@@ -197,6 +204,12 @@ export class PaymentService {
       updatedAt: now,
       expiresAt: new Date(now.getTime() + config.authorizationExpiryHours * 60 * 60 * 1000),
       bsimId,
+      // SACP: Store agent context if present
+      agentId: request.agentContext?.agentId,
+      agentOwnerId: request.agentContext?.ownerId,
+      agentHumanPresent: request.agentContext?.humanPresent,
+      agentMandateId: request.agentContext?.mandateId,
+      agentMandateType: request.agentContext?.mandateType,
     };
 
     // Get the correct BSIM client based on token's bsimId
@@ -217,6 +230,15 @@ export class PaymentService {
         merchantId: request.merchantId,
         merchantName: request.merchantName,
         orderId: request.orderId,
+        // SACP: Forward agent context to BSIM for issuer visibility
+        ...(request.agentContext && {
+          agentContext: {
+            agentId: request.agentContext.agentId,
+            ownerId: request.agentContext.ownerId,
+            humanPresent: request.agentContext.humanPresent,
+            mandateType: request.agentContext.mandateType,
+          },
+        }),
       });
 
       console.log('[PaymentService] BSIM response:', {
