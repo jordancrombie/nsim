@@ -183,6 +183,30 @@ export class PrismaPaymentRepository implements PaymentRepository {
     return transactions.map(toDomainTransaction);
   }
 
+  async findByAgentId(agentId: string): Promise<PaymentTransaction[]> {
+    const transactions = await this.prisma.paymentTransaction.findMany({
+      where: { agentId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return transactions.map(toDomainTransaction);
+  }
+
+  async findByAgentOwnerId(ownerId: string): Promise<PaymentTransaction[]> {
+    const transactions = await this.prisma.paymentTransaction.findMany({
+      where: { agentOwnerId: ownerId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return transactions.map(toDomainTransaction);
+  }
+
+  async findByHumanPresent(humanPresent: boolean): Promise<PaymentTransaction[]> {
+    const transactions = await this.prisma.paymentTransaction.findMany({
+      where: { agentHumanPresent: humanPresent },
+      orderBy: { createdAt: 'desc' },
+    });
+    return transactions.map(toDomainTransaction);
+  }
+
   async countByStatus(): Promise<Record<PaymentStatus, number>> {
     const counts = await this.prisma.paymentTransaction.groupBy({
       by: ['status'],

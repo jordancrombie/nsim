@@ -24,7 +24,7 @@ info:
     5. BSIM creates an authorization hold on the card
     6. Merchant captures the payment when goods are shipped
     7. Optional: void or refund as needed
-  version: 1.3.0
+  version: 1.4.0
   contact:
     name: BSIM Team
     url: https://github.com/jordancrombie/nsim
@@ -199,6 +199,52 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RefundResponse'
+
+  /payments:
+    get:
+      summary: Query transactions
+      description: |
+        SACP: Query transactions with optional agent filtering.
+        At least one query parameter is required.
+      tags:
+        - Payments
+      parameters:
+        - name: agentId
+          in: query
+          description: Filter by agent ID
+          schema:
+            type: string
+          example: agent_abc123
+        - name: ownerId
+          in: query
+          description: Filter by agent owner ID (WSIM user ID)
+          schema:
+            type: string
+          example: user_xyz789
+        - name: humanPresent
+          in: query
+          description: Filter by human presence flag
+          schema:
+            type: boolean
+          example: false
+      responses:
+        '200':
+          description: Transactions matching filter
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Transaction'
+        '400':
+          description: Missing required query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /payments/{transactionId}:
     get:

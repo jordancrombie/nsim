@@ -48,6 +48,21 @@ export interface PaymentRepository {
   findByBsimId(bsimId: string): Promise<PaymentTransaction[]>;
 
   /**
+   * SACP: Find transactions by agent ID
+   */
+  findByAgentId(agentId: string): Promise<PaymentTransaction[]>;
+
+  /**
+   * SACP: Find transactions by agent owner ID
+   */
+  findByAgentOwnerId(ownerId: string): Promise<PaymentTransaction[]>;
+
+  /**
+   * SACP: Find transactions where humanPresent matches
+   */
+  findByHumanPresent(humanPresent: boolean): Promise<PaymentTransaction[]>;
+
+  /**
    * Count transactions by status
    */
   countByStatus(): Promise<Record<PaymentStatus, number>>;
