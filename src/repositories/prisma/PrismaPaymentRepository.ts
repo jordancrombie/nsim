@@ -42,6 +42,12 @@ function toDomainTransaction(prismaTransaction: {
   createdAt: Date;
   updatedAt: Date;
   expiresAt: Date | null;
+  // SACP: Agent context fields
+  agentId: string | null;
+  agentOwnerId: string | null;
+  agentHumanPresent: boolean | null;
+  agentMandateId: string | null;
+  agentMandateType: string | null;
 }): PaymentTransaction {
   return {
     id: prismaTransaction.id,
@@ -68,6 +74,12 @@ function toDomainTransaction(prismaTransaction: {
     createdAt: prismaTransaction.createdAt,
     updatedAt: prismaTransaction.updatedAt,
     expiresAt: prismaTransaction.expiresAt ?? undefined,
+    // SACP: Agent context fields
+    agentId: prismaTransaction.agentId ?? undefined,
+    agentOwnerId: prismaTransaction.agentOwnerId ?? undefined,
+    agentHumanPresent: prismaTransaction.agentHumanPresent ?? undefined,
+    agentMandateId: prismaTransaction.agentMandateId ?? undefined,
+    agentMandateType: prismaTransaction.agentMandateType ?? undefined,
   };
 }
 
@@ -93,6 +105,12 @@ export class PrismaPaymentRepository implements PaymentRepository {
         declineReason: transaction.declineReason,
         bsimId: transaction.bsimId,
         expiresAt: transaction.expiresAt,
+        // SACP: Agent context fields
+        agentId: transaction.agentId,
+        agentOwnerId: transaction.agentOwnerId,
+        agentHumanPresent: transaction.agentHumanPresent,
+        agentMandateId: transaction.agentMandateId,
+        agentMandateType: transaction.agentMandateType,
       },
     });
     return toDomainTransaction(created);
@@ -160,6 +178,30 @@ export class PrismaPaymentRepository implements PaymentRepository {
   async findByBsimId(bsimId: string): Promise<PaymentTransaction[]> {
     const transactions = await this.prisma.paymentTransaction.findMany({
       where: { bsimId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return transactions.map(toDomainTransaction);
+  }
+
+  async findByAgentId(agentId: string): Promise<PaymentTransaction[]> {
+    const transactions = await this.prisma.paymentTransaction.findMany({
+      where: { agentId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return transactions.map(toDomainTransaction);
+  }
+
+  async findByAgentOwnerId(ownerId: string): Promise<PaymentTransaction[]> {
+    const transactions = await this.prisma.paymentTransaction.findMany({
+      where: { agentOwnerId: ownerId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return transactions.map(toDomainTransaction);
+  }
+
+  async findByHumanPresent(humanPresent: boolean): Promise<PaymentTransaction[]> {
+    const transactions = await this.prisma.paymentTransaction.findMany({
+      where: { agentHumanPresent: humanPresent },
       orderBy: { createdAt: 'desc' },
     });
     return transactions.map(toDomainTransaction);

@@ -45,6 +45,15 @@ export interface WebhookPayload {
 }
 
 /**
+ * SACP: Agent context included in webhook payloads for AI agent-initiated transactions
+ */
+export interface WebhookAgentContext {
+  agentId: string;
+  ownerId: string;
+  humanPresent: boolean;
+}
+
+/**
  * Data included in webhook payload
  */
 export interface WebhookPayloadData {
@@ -59,6 +68,8 @@ export interface WebhookPayloadData {
   capturedAmount?: number;
   refundedAmount?: number;
   refundId?: string;
+  /** SACP: Agent context if transaction was initiated by an AI agent */
+  agentContext?: WebhookAgentContext;
 }
 
 /**

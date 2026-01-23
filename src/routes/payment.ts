@@ -25,6 +25,17 @@ router.post('/authorize', async (req: Request, res: Response) => {
       });
     }
 
+    // SACP: Validate agentContext fields if present
+    if (request.agentContext) {
+      const { agentId, ownerId, humanPresent } = request.agentContext;
+      if (!agentId || !ownerId || humanPresent === undefined) {
+        return res.status(400).json({
+          error: 'Invalid agentContext: missing required fields',
+          required: ['agentId', 'ownerId', 'humanPresent'],
+        });
+      }
+    }
+
     const response = await getPaymentService().authorize(request);
     res.status(response.status === 'authorized' ? 200 : 400).json(response);
   } catch (error) {
@@ -91,6 +102,40 @@ router.post('/:transactionId/refund', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Refund error:', error);
     res.status(500).json({ error: 'Refund failed' });
+  }
+});
+
+/**
+ * GET /api/v1/payments
+ * SACP: Query transactions with optional agent filtering
+ */
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const { agentId, ownerId, humanPresent } = req.query;
+
+    // Validate that at least one filter is provided
+    if (!agentId && !ownerId && humanPresent === undefined) {
+      return res.status(400).json({
+        error: 'At least one query parameter required',
+        supported: ['agentId', 'ownerId', 'humanPresent'],
+      });
+    }
+
+    let transactions;
+
+    if (agentId) {
+      transactions = await getPaymentService().getTransactionsByAgentId(agentId as string);
+    } else if (ownerId) {
+      transactions = await getPaymentService().getTransactionsByOwnerId(ownerId as string);
+    } else if (humanPresent !== undefined) {
+      const isHumanPresent = humanPresent === 'true';
+      transactions = await getPaymentService().getTransactionsByHumanPresent(isHumanPresent);
+    }
+
+    res.json({ transactions });
+  } catch (error) {
+    console.error('Query transactions error:', error);
+    res.status(500).json({ error: 'Failed to query transactions' });
   }
 });
 

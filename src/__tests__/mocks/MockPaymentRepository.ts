@@ -51,6 +51,18 @@ export class MockPaymentRepository implements PaymentRepository {
     return Array.from(this.transactions.values()).filter((t) => t.bsimId === bsimId);
   }
 
+  async findByAgentId(agentId: string): Promise<PaymentTransaction[]> {
+    return Array.from(this.transactions.values()).filter((t) => t.agentId === agentId);
+  }
+
+  async findByAgentOwnerId(ownerId: string): Promise<PaymentTransaction[]> {
+    return Array.from(this.transactions.values()).filter((t) => t.agentOwnerId === ownerId);
+  }
+
+  async findByHumanPresent(humanPresent: boolean): Promise<PaymentTransaction[]> {
+    return Array.from(this.transactions.values()).filter((t) => t.agentHumanPresent === humanPresent);
+  }
+
   async countByStatus(): Promise<Record<PaymentStatus, number>> {
     const counts: Record<PaymentStatus, number> = {
       pending: 0,

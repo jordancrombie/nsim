@@ -19,6 +19,23 @@ export type PaymentOperation =
   | 'void'
   | 'refund';
 
+/**
+ * SACP: Agent context for AI agent-initiated transactions
+ * Included in authorization requests when a transaction is initiated by an AI agent
+ */
+export interface AgentContext {
+  /** Unique agent identifier (e.g., 'agent_abc123') */
+  agentId: string;
+  /** Human owner of the agent - WSIM user ID (UUID) */
+  ownerId: string;
+  /** Was human present for this transaction? */
+  humanPresent: boolean;
+  /** Reference to authorization mandate (optional) */
+  mandateId?: string;
+  /** Type of mandate: 'cart' | 'intent' | 'none' */
+  mandateType?: 'cart' | 'intent' | 'none';
+}
+
 export interface PaymentAuthorizationRequest {
   merchantId: string;
   merchantName: string;
@@ -28,6 +45,8 @@ export interface PaymentAuthorizationRequest {
   orderId: string;
   description?: string;
   metadata?: Record<string, string>;
+  /** SACP: Agent context - present if transaction initiated by AI agent */
+  agentContext?: AgentContext;
 }
 
 export interface PaymentAuthorizationResponse {
@@ -95,6 +114,18 @@ export interface PaymentTransaction {
   expiresAt?: Date;
   /** The BSIM instance that processed this transaction (for multi-bank routing) */
   bsimId?: string;
+
+  // SACP: Agent context fields
+  /** Agent ID if transaction initiated by AI agent */
+  agentId?: string;
+  /** Human owner of the agent (WSIM user ID) */
+  agentOwnerId?: string;
+  /** Was human present for this transaction? */
+  agentHumanPresent?: boolean;
+  /** Reference to authorization mandate */
+  agentMandateId?: string;
+  /** Type of mandate: 'cart' | 'intent' | 'none' */
+  agentMandateType?: string;
 }
 
 export interface QueuedPaymentJob {

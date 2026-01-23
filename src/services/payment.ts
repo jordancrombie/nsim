@@ -15,6 +15,21 @@ import { BsimClient } from './bsim-client.js';
 import { bsimRegistry } from './bsim-registry.js';
 import { sendWebhookNotification } from './webhook.js';
 import { PaymentRepository, getPaymentRepository } from '../repositories/index.js';
+import { WebhookAgentContext } from '../types/webhook.js';
+
+/**
+ * SACP: Build agent context for webhook payload from transaction
+ */
+function buildWebhookAgentContext(transaction: PaymentTransaction): WebhookAgentContext | undefined {
+  if (!transaction.agentId || !transaction.agentOwnerId) {
+    return undefined;
+  }
+  return {
+    agentId: transaction.agentId,
+    ownerId: transaction.agentOwnerId,
+    humanPresent: transaction.agentHumanPresent ?? false,
+  };
+}
 
 /**
  * Token analysis utilities for debugging wallet payment flow
@@ -160,6 +175,13 @@ export class PaymentService {
       amount: request.amount,
       currency: request.currency || 'CAD',
       bsimId,
+      // SACP: Log agent context if present
+      agentContext: request.agentContext ? {
+        agentId: request.agentContext.agentId,
+        ownerId: request.agentContext.ownerId,
+        humanPresent: request.agentContext.humanPresent,
+        mandateType: request.agentContext.mandateType,
+      } : null,
       tokenAnalysis: {
         prefix: tokenAnalysis.prefix,
         bsimId: tokenAnalysis.bsimId,
@@ -197,6 +219,12 @@ export class PaymentService {
       updatedAt: now,
       expiresAt: new Date(now.getTime() + config.authorizationExpiryHours * 60 * 60 * 1000),
       bsimId,
+      // SACP: Store agent context if present
+      agentId: request.agentContext?.agentId,
+      agentOwnerId: request.agentContext?.ownerId,
+      agentHumanPresent: request.agentContext?.humanPresent,
+      agentMandateId: request.agentContext?.mandateId,
+      agentMandateType: request.agentContext?.mandateType,
     };
 
     // Get the correct BSIM client based on token's bsimId
@@ -217,6 +245,15 @@ export class PaymentService {
         merchantId: request.merchantId,
         merchantName: request.merchantName,
         orderId: request.orderId,
+        // SACP: Forward agent context to BSIM for issuer visibility
+        ...(request.agentContext && {
+          agentContext: {
+            agentId: request.agentContext.agentId,
+            ownerId: request.agentContext.ownerId,
+            humanPresent: request.agentContext.humanPresent,
+            mandateType: request.agentContext.mandateType,
+          },
+        }),
       });
 
       console.log('[PaymentService] BSIM response:', {
@@ -282,6 +319,7 @@ export class PaymentService {
       status: transaction.status,
       authorizationCode: transaction.authorizationCode,
       declineReason: transaction.declineReason,
+      agentContext: buildWebhookAgentContext(transaction),
     }).catch((err) => console.error('[PaymentService] Webhook notification error:', err));
 
     return {
@@ -357,6 +395,7 @@ export class PaymentService {
         currency: updatedTransaction.currency,
         status: updatedTransaction.status,
         authorizationCode: updatedTransaction.authorizationCode,
+        agentContext: buildWebhookAgentContext(updatedTransaction),
       }).catch((err) => console.error('[PaymentService] Webhook notification error:', err));
     }
 
@@ -425,6 +464,7 @@ export class PaymentService {
         amount: updatedTransaction.amount,
         currency: updatedTransaction.currency,
         status: updatedTransaction.status,
+        agentContext: buildWebhookAgentContext(updatedTransaction),
       }).catch((err) => console.error('[PaymentService] Webhook notification error:', err));
     }
 
@@ -490,6 +530,7 @@ export class PaymentService {
           status: updatedTransaction.status,
           refundId,
           refundedAmount: updatedTransaction.refundedAmount,
+          agentContext: buildWebhookAgentContext(updatedTransaction),
         }).catch((err) => console.error('[PaymentService] Webhook notification error:', err));
 
         return {
@@ -522,6 +563,27 @@ export class PaymentService {
 
   async getTransaction(transactionId: string): Promise<PaymentTransaction | null> {
     return this.repository.findById(transactionId);
+  }
+
+  /**
+   * SACP: Get transactions by agent ID
+   */
+  async getTransactionsByAgentId(agentId: string): Promise<PaymentTransaction[]> {
+    return this.repository.findByAgentId(agentId);
+  }
+
+  /**
+   * SACP: Get transactions by agent owner ID
+   */
+  async getTransactionsByOwnerId(ownerId: string): Promise<PaymentTransaction[]> {
+    return this.repository.findByAgentOwnerId(ownerId);
+  }
+
+  /**
+   * SACP: Get transactions by human presence
+   */
+  async getTransactionsByHumanPresent(humanPresent: boolean): Promise<PaymentTransaction[]> {
+    return this.repository.findByHumanPresent(humanPresent);
   }
 
   /**
@@ -568,6 +630,7 @@ export class PaymentService {
       amount: updatedTransaction.amount,
       currency: updatedTransaction.currency,
       status: updatedTransaction.status,
+      agentContext: buildWebhookAgentContext(updatedTransaction),
     }).catch((err) => console.error('[PaymentService] Webhook notification error:', err));
   }
 }

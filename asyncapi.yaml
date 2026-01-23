@@ -1,7 +1,7 @@
 asyncapi: 2.6.0
 info:
   title: NSIM Webhook Events
-  version: 1.0.0
+  version: 1.1.0
   description: |
     Asynchronous webhook events sent by NSIM to registered merchant endpoints.
 
@@ -83,6 +83,23 @@ components:
               currency: "CAD"
               status: "authorized"
               authorizationCode: "AUTH-F7C42498"
+        - name: Agent-initiated authorization
+          payload:
+            id: "a1b2c3d4-5678-90ab-cdef-1234567890ab"
+            type: "payment.authorized"
+            timestamp: "2026-01-21T14:30:00.000Z"
+            data:
+              transactionId: "503237f6-c928-42a4-8243-8125aa050750"
+              merchantId: "ssim-regal-moose"
+              orderId: "agent-order-789"
+              amount: 42.50
+              currency: "CAD"
+              status: "authorized"
+              authorizationCode: "AUTH-A9B8C7D6"
+              agentContext:
+                agentId: "agent_abc123"
+                ownerId: "user_xyz789"
+                humanPresent: false
 
     PaymentCaptured:
       name: payment.captured
@@ -255,3 +272,24 @@ components:
         refundId:
           type: string
           description: Refund identifier (for refunded events)
+        agentContext:
+          $ref: '#/components/schemas/AgentContext'
+
+    AgentContext:
+      type: object
+      description: |
+        SACP agent context for AI agent-initiated transactions.
+        Present when the transaction was initiated by an AI agent.
+      properties:
+        agentId:
+          type: string
+          description: Unique agent identifier
+          example: "agent_abc123"
+        ownerId:
+          type: string
+          description: Human owner of the agent (WSIM user ID)
+          example: "user_xyz789"
+        humanPresent:
+          type: boolean
+          description: Was a human present when this transaction was initiated
+          example: false

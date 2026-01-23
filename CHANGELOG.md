@@ -11,6 +11,37 @@ _No unreleased changes._
 
 ---
 
+## [1.2.0] - 2026-01-21
+
+### Added
+
+- **SACP P1: Agent Context in Webhooks** - Webhook payloads now include agent context
+  - All payment webhooks (authorized, captured, voided, refunded, expired, failed) include `agentContext` when present
+  - AsyncAPI spec v1.1.0 updated with AgentContext schema and example
+
+- **SACP P1: Transaction Query Filtering** - Query transactions by agent fields
+  - New endpoint: `GET /api/v1/payments?agentId=...` - Query by agent ID
+  - New endpoint: `GET /api/v1/payments?ownerId=...` - Query by agent owner ID
+  - New endpoint: `GET /api/v1/payments?humanPresent=...` - Query by human presence flag
+  - Repository methods: `findByAgentId`, `findByAgentOwnerId`, `findByHumanPresent`
+  - OpenAPI spec v1.4.0 with query parameter documentation
+
+---
+
+## [1.1.0] - 2026-01-21
+
+### Added
+
+- **SACP Agent Context Support** - SimToolBox Agent Commerce Protocol integration
+  - Accept `agentContext` in authorization requests for AI agent-initiated transactions
+  - Store agent context fields in payment transactions: `agentId`, `agentOwnerId`, `agentHumanPresent`, `agentMandateId`, `agentMandateType`
+  - Forward agent context to BSIM for issuer visibility and risk assessment
+  - Database migration adds agent context columns with indexes for efficient queries
+  - OpenAPI spec v1.3.0 with AgentContext schema and updated documentation
+  - Validation of required agent context fields when present (agentId, ownerId, humanPresent)
+
+---
+
 ## [1.0.1] - 2026-01-15
 
 ### Added

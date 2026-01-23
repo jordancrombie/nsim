@@ -63,12 +63,21 @@ model PaymentTransaction {
   updatedAt         DateTime      @updatedAt
   expiresAt         DateTime?
 
+  // SACP: Agent context for AI agent-initiated transactions
+  agentId           String?       @map("agent_id")           // Unique agent identifier
+  agentOwnerId      String?       @map("agent_owner_id")     // Human owner of the agent (WSIM user ID)
+  agentHumanPresent Boolean?      @map("agent_human_present") // Was human present for this transaction?
+  agentMandateId    String?       @map("agent_mandate_id")   // Reference to authorization mandate
+  agentMandateType  String?       @map("agent_mandate_type") // 'cart' | 'intent' | 'none'
+
   @@index([merchantId])
   @@index([orderId])
   @@index([status])
   @@index([expiresAt])
   @@index([bsimId])
   @@index([createdAt])
+  @@index([agentId], map: "idx_tx_agent_id")
+  @@index([agentOwnerId], map: "idx_tx_agent_owner_id")
   @@map("nsim_payment_transactions")
 }
 
